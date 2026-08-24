@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.jarvis.mapper.TaskMapper">
+
+	<resultMap id="TaskResultMap" type="com.example.jarvis.model.Task">
+		<id property="id" column="id"/>
+		<result property="title" column="title"/>
+		<result property="description" column="description"/>
+		<result property="completed" column="completed"/>
+	</resultMap>
+
+	<sql id="BaseColumns">
+		id, title, description, completed
+	</sql>
+
+	<select id="findAll" resultMap="TaskResultMap">
+		SELECT
+		<include refid="BaseColumns"/>
+		FROM task
+		ORDER BY id
+	</select>
+
+	<select id="findById" parameterType="long" resultMap="TaskResultMap">
+		SELECT
+		<include refid="BaseColumns"/>
+		FROM task
+		WHERE id = #{id}
+	</select>
+
+	<insert id="insert" parameterType="com.example.jarvis.model.Task" useGeneratedKeys="true" keyProperty="id">
+		INSERT INTO task (title, description, completed)
+		VALUES (#{title}, #{description}, #{completed})
+	</insert>
+
+	<update id="update" parameterType="com.example.jarvis.model.Task">
+		UPDATE task
+		SET title = #{title},
+			description = #{description},
+			completed = #{completed}
+		WHERE id = #{id}
+	</update>
+
+	<delete id="deleteById" parameterType="long">
+		DELETE FROM task
+		WHERE id = #{id}
+	</delete>
+
+	<select id="countById" parameterType="long" resultType="int">
+		SELECT COUNT(1)
+		FROM task
+		WHERE id = #{id}
+	</select>
+
+</mapper>
