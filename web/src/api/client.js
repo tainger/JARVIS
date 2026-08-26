@@ -13,6 +13,10 @@ export const taskApi = {
   remove: (id) => http.delete(`/tasks/${id}`),
 }
 
+export const mcpApi = {
+  overview: () => http.get('/mcp').then((r) => r.data),
+}
+
 /**
  * Stream chat reply via SSE (POST /api/agent/chat/stream).
  * Yields text deltas as they arrive. Abort via AbortController.
