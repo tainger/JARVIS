@@ -1,7 +1,6 @@
-import { Alert, Avatar, Card, Space, Table, Tag, Typography } from 'antd'
+import { Alert, Avatar, Card, Space, Table, Tag } from 'antd'
 import { UserOutlined } from '@ant-design/icons'
-
-const { Title } = Typography
+import PageContainer from '../components/PageContainer'
 
 // Mock data — backend user API not implemented yet.
 const mockUsers = [
@@ -15,7 +14,7 @@ export default function Users() {
     {
       title: '用户',
       dataIndex: 'name',
-      render: (v, r) => (
+      render: (v) => (
         <Space>
           <Avatar size="small" icon={<UserOutlined />} />
           <span>{v}</span>
@@ -33,10 +32,11 @@ export default function Users() {
   ]
 
   return (
-    <div>
-      <Title level={4} style={{ marginTop: 0 }}>
-        用户管理
-      </Title>
+    <PageContainer
+      title="用户管理"
+      breadcrumb={[{ title: '首页', to: '/dashboard' }, { title: '用户管理' }]}
+      subTitle="系统用户与角色"
+    >
       <Alert
         type="info"
         showIcon
@@ -47,6 +47,6 @@ export default function Users() {
       <Card>
         <Table rowKey="id" columns={columns} dataSource={mockUsers} pagination={false} />
       </Card>
-    </div>
+    </PageContainer>
   )
 }

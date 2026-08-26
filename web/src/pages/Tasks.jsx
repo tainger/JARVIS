@@ -12,12 +12,10 @@ import {
   Switch,
   Table,
   Tag,
-  Typography,
 } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { taskApi } from '../api/client'
-
-const { Title } = Typography
+import PageContainer from '../components/PageContainer'
 
 export default function Tasks() {
   const { message } = App.useApp()
@@ -163,10 +161,16 @@ export default function Tasks() {
   ]
 
   return (
-    <div>
-      <Title level={4} style={{ marginTop: 0 }}>
-        任务管理
-      </Title>
+    <PageContainer
+      title="任务管理"
+      breadcrumb={[{ title: '首页', to: '/dashboard' }, { title: '任务管理' }]}
+      subTitle="创建、编辑与跟踪任务"
+      extra={
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+          新建任务
+        </Button>
+      }
+    >
       <Card>
         <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between' }}>
           <Space>
@@ -191,9 +195,6 @@ export default function Tasks() {
               刷新
             </Button>
           </Space>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新建任务
-          </Button>
         </Space>
         <Table
           rowKey="id"
@@ -228,6 +229,6 @@ export default function Tasks() {
           </Form.Item>
         </Form>
       </Modal>
-    </div>
+    </PageContainer>
   )
 }

@@ -1,7 +1,9 @@
 import { Alert, Card, Col, Descriptions, Row, Tag, Typography } from 'antd'
 import { RobotOutlined, ToolOutlined } from '@ant-design/icons'
+import PageContainer from '../components/PageContainer'
+import { BRAND } from '../theme'
 
-const { Title, Paragraph } = Typography
+const { Paragraph } = Typography
 
 const agents = [
   {
@@ -22,10 +24,11 @@ const agents = [
 
 export default function Agents() {
   return (
-    <div>
-      <Title level={4} style={{ marginTop: 0 }}>
-        智能体管理
-      </Title>
+    <PageContainer
+      title="智能体管理"
+      breadcrumb={[{ title: '首页', to: '/dashboard' }, { title: '智能体管理' }]}
+      subTitle="已注册的 Agent 与工具"
+    >
       <Alert
         type="info"
         showIcon
@@ -70,6 +73,6 @@ export default function Agents() {
           </Col>
         ))}
       </Row>
-    </div>
+    </PageContainer>
   )
 }

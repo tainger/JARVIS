@@ -7,13 +7,15 @@ import {
   MenuUnfoldOutlined,
   MessageOutlined,
   RobotOutlined,
+  SettingOutlined,
   TeamOutlined,
   UnorderedListOutlined,
   UserOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { BRAND, LAYOUT } from '../theme'
 
-const { Sider, Header, Content } = Layout
+const { Sider, Header, Content, Footer } = Layout
 
 const menuItems = [
   { key: '/dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
@@ -42,18 +44,30 @@ export default function AdminLayout() {
     navigate('/login', { replace: true })
   }
 
+  const siderWidth = LAYOUT.siderWidth
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider
         trigger={null}
         collapsible
         collapsed={collapsed}
-        width={220}
+        width={siderWidth}
         theme="dark"
+        style={{
+          overflow: 'auto',
+          height: '100vh',
+          position: 'fixed',
+          insetInlineStart: 0,
+          top: 0,
+          bottom: 0,
+          zIndex: 20,
+          boxShadow: '2px 0 8px rgba(0,0,0,0.15)',
+        }}
       >
         <div
           style={{
-            height: 64,
+            height: LAYOUT.headerHeight,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -64,7 +78,7 @@ export default function AdminLayout() {
             letterSpacing: 1,
           }}
         >
-          <RobotOutlined style={{ color: '#2f54eb', fontSize: 24 }} />
+          <RobotOutlined style={{ color: BRAND.primary, fontSize: 24 }} />
           {!collapsed && <span>JARVIS Admin</span>}
         </div>
         <Menu
@@ -75,18 +89,30 @@ export default function AdminLayout() {
           onClick={({ key }) => navigate(key)}
         />
       </Sider>
-      <Layout>
+      <Layout
+        style={{
+          marginInlineStart: collapsed ? 80 : siderWidth,
+          transition: 'margin-inline-start 0.2s',
+        }}
+      >
         <Header
           style={{
             padding: '0 24px',
+            height: LAYOUT.headerHeight,
+            lineHeight: `${LAYOUT.headerHeight}px`,
             background: token.colorBgContainer,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            borderBottom: `1px solid ${token.colorBorderSecondary}`,
+            position: 'sticky',
+            top: 0,
+            zIndex: 10,
+            boxShadow: '0 1px 4px rgba(0,21,41,0.08)',
           }}
         >
           <span
+            role="button"
+            tabIndex={0}
             style={{ fontSize: 18, cursor: 'pointer' }}
             onClick={() => setCollapsed(!collapsed)}
           >
@@ -100,6 +126,13 @@ export default function AdminLayout() {
               menu={{
                 items: [
                   {
+                    key: 'profile',
+                    icon: <SettingOutlined />,
+                    label: '个人设置',
+                    disabled: true,
+                  },
+                  { type: 'divider' },
+                  {
                     key: 'logout',
                     icon: <LogoutOutlined />,
                     label: '退出登录',
@@ -109,15 +142,27 @@ export default function AdminLayout() {
               }}
             >
               <Space style={{ cursor: 'pointer' }}>
-                <Avatar size="small" icon={<UserOutlined />} />
+                <Avatar
+                  size="small"
+                  icon={<UserOutlined />}
+                  style={{ background: BRAND.primary }}
+                />
                 <span>{user?.name || 'admin'}</span>
               </Space>
             </Dropdown>
           </Space>
         </Header>
-        <Content style={{ margin: 24 }}>
+        <Content
+          style={{
+            margin: LAYOUT.contentPadding,
+            minHeight: `calc(100vh - ${LAYOUT.headerHeight + LAYOUT.contentPadding * 2 + 48}px)`,
+          }}
+        >
           <Outlet />
         </Content>
+        <Footer style={{ textAlign: 'center', color: token.colorTextSecondary }}>
+          JARVIS Admin ©{new Date().getFullYear()} · Powered by Spring Boot & Ant Design
+        </Footer>
       </Layout>
     </Layout>
   )

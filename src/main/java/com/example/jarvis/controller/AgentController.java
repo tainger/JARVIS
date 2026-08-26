@@ -1,6 +1,8 @@
 package com.example.jarvis.controller;
 
+import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 import com.example.jarvis.dto.ChatRequest;
 import com.example.jarvis.dto.ChatResponse;
@@ -9,6 +11,9 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.exception.AuthenticationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,6 +24,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RestController
 @RequestMapping("/api/agent")
 public class AgentController {
+
+	private static final Logger log = LoggerFactory.getLogger(AgentController.class);
 
 	private final Agent jarvisAgent;
 
@@ -49,7 +56,7 @@ public class AgentController {
 
 		jarvisAgent.stream(List.of(input), options).subscribe(
 				event -> sendDelta(emitter, event),
-				emitter::completeWithError,
+				error -> sendErrorAndComplete(emitter, error),
 				emitter::complete);
 		return emitter;
 	}
@@ -58,18 +65,43 @@ public class AgentController {
 		try {
 			String text = event.getMessage().getTextContent();
 			if (event.getType() == EventType.AGENT_RESULT) {
-				// Final event: deltas were already delivered via REASONING events.
 				emitter.complete();
 				return;
 			}
-			// The terminal REASONING event repeats the full accumulated text;
-			// only forward the incremental deltas.
 			if (!event.isLast() && text != null && !text.isEmpty()) {
 				emitter.send(SseEmitter.event().data(text));
 			}
 		} catch (Exception e) {
-			emitter.completeWithError(e);
+			sendErrorAndComplete(emitter, e);
 		}
+	}
+
+	private void sendErrorAndComplete(SseEmitter emitter, Throwable error) {
+		log.warn("Agent stream error: {}", error.getMessage());
+		try {
+			String userMessage = toUserMessage(error);
+			emitter.send(SseEmitter.event()
+					.name("error")
+					.data(Map.of("error", userMessage)));
+		} catch (IOException ignored) {
+			// connection already lost, nothing to do
+		} finally {
+			emitter.complete();
+		}
+	}
+
+	private String toUserMessage(Throwable error) {
+		if (error instanceof AuthenticationException) {
+			return "模型服务认证失败：请检查 AGENTSCOPE_API_KEY / AGENTSCOPE_BASE_URL / AGENTSCOPE_MODEL 环境变量配置，当前使用的占位符 key 无效。";
+		}
+		String msg = error.getMessage();
+		if (msg != null && msg.contains("401")) {
+			return "模型服务认证失败（401）：请检查 API Key 是否正确。";
+		}
+		if (msg != null && msg.contains("429")) {
+			return "模型服务限流（429）：请求过于频繁，请稍后再试。";
+		}
+		return "模型服务异常：" + (msg != null ? msg.split("\\|")[0].trim() : error.getClass().getSimpleName());
 	}
 
 }

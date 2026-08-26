@@ -16,14 +16,16 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   MessageOutlined,
+  ReloadOutlined,
   RobotOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { taskApi } from '../api/client'
+import PageContainer from '../components/PageContainer'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 
 export default function Dashboard() {
   const [tasks, setTasks] = useState([])
@@ -74,10 +76,16 @@ export default function Dashboard() {
   ]
 
   return (
-    <div>
-      <Title level={4} style={{ marginTop: 0 }}>
-        仪表盘
-      </Title>
+    <PageContainer
+      title="仪表盘"
+      breadcrumb={[{ title: '首页' }, { title: '仪表盘' }]}
+      subTitle="任务概览与快捷操作"
+      extra={
+        <Button icon={<ReloadOutlined />} onClick={loadTasks} loading={loading}>
+          刷新
+        </Button>
+      }
+    >
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} xl={6}>
           <Card>
@@ -180,6 +188,6 @@ export default function Dashboard() {
           </Card>
         </Col>
       </Row>
-    </div>
+    </PageContainer>
   )
 }
