@@ -30,6 +30,11 @@ FROM eclipse-temurin:17-jre
 ENV TZ=Asia/Shanghai \
     JAVA_OPTS="-Xms256m -Xmx1024m"
 
+# 装 curl：用于 healthcheck + 容器内快速调试接口
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # 可执行 jar

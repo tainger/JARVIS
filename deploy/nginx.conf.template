@@ -10,7 +10,9 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
-    # /api → 后端服务（默认 http://jarvis-backend:8080）
+    # /api → 后端服务（默认 http://backend:8080，末尾不要加斜杠）
+    # Nginx 规则：proxy_pass 末尾的 "/" 会把 location 匹配前缀 /api 去掉，
+    # 所以 "/api/agent/chat" → 后端收到 "/agent/chat"（符合后端无 /api 前缀）。
     location /api/ {
         proxy_pass         ${BACKEND_HOST}/;
         proxy_http_version 1.1;

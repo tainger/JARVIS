@@ -86,6 +86,7 @@ services:
       - AGENTSCOPE_MODEL=${AGENTSCOPE_MODEL:-deepseek-chat}
       # --- Agent ---
       - AGENTSCOPE_AGENT_NAME=${AGENTSCOPE_AGENT_NAME:-jarvis-assistant}
+      - AGENTSCOPE_AGENT_SYS_PROMPT=${AGENTSCOPE_AGENT_SYS_PROMPT:-You are JARVIS, a helpful assistant. Use the available tools to answer questions about tasks.}
       - AGENTSCOPE_AGENT_MAX_ITERS=${AGENTSCOPE_AGENT_MAX_ITERS:-10}
       # --- RAG：通过 compose 服务名访问 Ollama ---
       - RAG_EMBEDDING_BASE_URL=http://ollama:11434
