@@ -11,6 +11,7 @@ import {
   TeamOutlined,
   UnorderedListOutlined,
   UserOutlined,
+  BookOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BRAND, LAYOUT } from '../theme'
@@ -23,6 +24,7 @@ const menuItems = [
   { key: '/tasks', icon: <UnorderedListOutlined />, label: '任务管理' },
   { key: '/users', icon: <TeamOutlined />, label: '用户管理' },
   { key: '/agents', icon: <RobotOutlined />, label: '智能体管理' },
+  { key: '/knowledge', icon: <BookOutlined />, label: '知识库' },
 ]
 
 export default function AdminLayout() {

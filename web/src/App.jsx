@@ -6,6 +6,7 @@ import Chat from './pages/Chat'
 import Tasks from './pages/Tasks'
 import Users from './pages/Users'
 import Agents from './pages/Agents'
+import Knowledge from './pages/Knowledge'
 
 function RequireAuth({ children }) {
   const user = localStorage.getItem('jarvis_user')
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="tasks" element={<Tasks />} />
         <Route path="users" element={<Users />} />
         <Route path="agents" element={<Agents />} />
+        <Route path="knowledge" element={<Knowledge />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

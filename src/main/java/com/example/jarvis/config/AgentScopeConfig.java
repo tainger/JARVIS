@@ -236,9 +236,11 @@ public class AgentScopeConfig {
 	}
 
 	@Bean
-	public Toolkit agentscopeToolkit(TaskTools taskTools) {
+	public Toolkit agentscopeToolkit(TaskTools taskTools,
+			com.example.jarvis.rag.KnowledgeSearchTools knowledgeSearchTools) {
 		Toolkit toolkit = new Toolkit();
 		toolkit.registerTool(taskTools);
+		toolkit.registerTool(knowledgeSearchTools);
 		registerMcpServers(toolkit);
 		return toolkit;
 	}

@@ -6,6 +6,7 @@ import java.util.Map;
 
 import com.example.jarvis.dto.ChatRequest;
 import com.example.jarvis.dto.ChatResponse;
+import com.example.jarvis.rag.KnowledgeService;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
@@ -15,6 +16,7 @@ import io.agentscope.core.model.exception.AuthenticationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -29,13 +31,16 @@ public class AgentController {
 
 	private final Agent jarvisAgent;
 
-	public AgentController(Agent jarvisAgent) {
+	private final KnowledgeService knowledgeService;
+
+	public AgentController(Agent jarvisAgent, KnowledgeService knowledgeService) {
 		this.jarvisAgent = jarvisAgent;
+		this.knowledgeService = knowledgeService;
 	}
 
 	@PostMapping("/chat")
 	public ChatResponse chat(@RequestBody ChatRequest request) {
-		Msg input = Msg.builder().textContent(request.message()).build();
+		Msg input = Msg.builder().textContent(augmentWithKnowledge(request.message())).build();
 		Msg response = jarvisAgent.call(input).block();
 		return new ChatResponse(response.getTextContent());
 	}
@@ -48,7 +53,7 @@ public class AgentController {
 	@PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
 	public SseEmitter chatStream(@RequestBody ChatRequest request) {
 		SseEmitter emitter = new SseEmitter(0L); // no timeout, stream may be long
-		Msg input = Msg.builder().textContent(request.message()).build();
+		Msg input = Msg.builder().textContent(augmentWithKnowledge(request.message())).build();
 		StreamOptions options = StreamOptions.builder()
 				.eventTypes(EventType.REASONING, EventType.AGENT_RESULT)
 				.incremental(true)
@@ -102,6 +107,35 @@ public class AgentController {
 			return "模型服务限流（429）：请求过于频繁，请稍后再试。";
 		}
 		return "模型服务异常：" + (msg != null ? msg.split("\\|")[0].trim() : error.getClass().getSimpleName());
+	}
+
+	/**
+	 * 双入口之一：聊天注入。检索知识库，命中时把结果片段与用户问题拼装为增强 prompt。
+	 * 检索失败（如 Ollama 未启动）不影响聊天，降级为原始消息。
+	 */
+	private String augmentWithKnowledge(String message) {
+		if (!StringUtils.hasText(message)) {
+			return message;
+		}
+		try {
+			String context = knowledgeService.buildContext(message.strip(), null);
+			if (context == null) {
+				return message;
+			}
+			log.info("RAG 注入：命中知识库片段");
+			return """
+					请优先依据以下知识库检索结果回答问题；若与问题无关请忽略。
+
+					【知识库检索结果】
+					%s
+
+					【用户问题】
+					%s""".formatted(context, message.strip());
+		}
+		catch (Exception e) {
+			log.warn("知识库检索失败，降级为普通对话：{}", e.getMessage());
+			return message;
+		}
 	}
 
 }

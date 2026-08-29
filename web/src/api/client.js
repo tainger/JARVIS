@@ -17,6 +17,16 @@ export const mcpApi = {
   overview: () => http.get('/mcp').then((r) => r.data),
 }
 
+export const knowledgeApi = {
+  list: () => http.get('/knowledge/documents').then((r) => r.data),
+  get: (id) => http.get(`/knowledge/documents/${id}`).then((r) => r.data),
+  create: (data) => http.post('/knowledge/documents', data).then((r) => r.data),
+  remove: (id) => http.delete(`/knowledge/documents/${id}`),
+  search: (query, topK) =>
+    http.post('/knowledge/search', { query, topK }).then((r) => r.data),
+  stats: () => http.get('/knowledge/stats').then((r) => r.data),
+}
+
 /**
  * Stream chat reply via SSE (POST /api/agent/chat/stream).
  * Yields text deltas as they arrive. Abort via AbortController.

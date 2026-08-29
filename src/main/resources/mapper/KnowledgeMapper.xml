@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.jarvis.mapper.KnowledgeMapper">
+
+	<resultMap id="DocumentResultMap" type="com.example.jarvis.model.KnowledgeDocument">
+		<id property="id" column="id"/>
+		<result property="title" column="title"/>
+		<result property="fileName" column="file_name"/>
+		<result property="content" column="content"/>
+		<result property="chunkCount" column="chunk_count"/>
+		<result property="createdAt" column="created_at"/>
+	</resultMap>
+
+	<resultMap id="ChunkResultMap" type="com.example.jarvis.model.KnowledgeChunk">
+		<id property="id" column="id"/>
+		<result property="documentId" column="document_id"/>
+		<result property="seq" column="seq"/>
+		<result property="content" column="content"/>
+		<result property="embedding" column="embedding"/>
+		<result property="dim" column="dim"/>
+	</resultMap>
+
+	<sql id="DocumentColumns">
+		id, title, file_name, content, chunk_count, created_at
+	</sql>
+
+	<sql id="ChunkColumns">
+		id, document_id, seq, content, embedding, dim
+	</sql>
+
+	<select id="findAllDocuments" resultMap="DocumentResultMap">
+		SELECT
+		<include refid="DocumentColumns"/>
+		FROM knowledge_document
+		ORDER BY id DESC
+	</select>
+
+	<select id="findDocumentById" parameterType="long" resultMap="DocumentResultMap">
+		SELECT
+		<include refid="DocumentColumns"/>
+		FROM knowledge_document
+		WHERE id = #{id}
+	</select>
+
+	<insert id="insertDocument" parameterType="com.example.jarvis.model.KnowledgeDocument"
+			useGeneratedKeys="true" keyProperty="id">
+		INSERT INTO knowledge_document (title, file_name, content, chunk_count)
+		VALUES (#{title}, #{fileName}, #{content}, #{chunkCount})
+	</insert>
+
+	<delete id="deleteDocument" parameterType="long">
+		DELETE FROM knowledge_document
+		WHERE id = #{id}
+	</delete>
+
+	<select id="findAllChunks" resultMap="ChunkResultMap">
+		SELECT
+		<include refid="ChunkColumns"/>
+		FROM knowledge_chunk
+		WHERE embedding IS NOT NULL
+		ORDER BY document_id, seq
+	</select>
+
+	<select id="findChunksByDocumentId" resultMap="ChunkResultMap">
+		SELECT
+		<include refid="ChunkColumns"/>
+		FROM knowledge_chunk
+		WHERE document_id = #{documentId}
+		ORDER BY seq
+	</select>
+
+	<insert id="insertChunk" parameterType="com.example.jarvis.model.KnowledgeChunk"
+			useGeneratedKeys="true" keyProperty="id">
+		INSERT INTO knowledge_chunk (document_id, seq, content, embedding, dim)
+		VALUES (#{documentId}, #{seq}, #{content}, #{embedding}, #{dim})
+	</insert>
+
+	<delete id="deleteChunksByDocumentId" parameterType="long">
+		DELETE FROM knowledge_chunk
+		WHERE document_id = #{documentId}
+	</delete>
+
+</mapper>
