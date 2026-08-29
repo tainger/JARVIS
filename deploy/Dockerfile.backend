@@ -1,0 +1,47 @@
+# ================================================================
+# 后端 Dockerfile（Spring Boot 4 / Java 17）
+# 构建：
+#   docker build -f deploy/Dockerfile.backend -t jarvis-backend .
+# 生产容器只含 JDK + 可执行 jar，约 200MB 起步
+# ================================================================
+
+# ------------ Stage 1: Maven 构建 ------------
+FROM maven:3.9-eclipse-temurin-17 AS builder
+
+WORKDIR /workspace
+
+# 先拷贝 pom 与 maven wrapper，做依赖层缓存
+COPY pom.xml ./
+COPY .mvn  ./.mvn
+COPY mvnw ./
+# 触发依赖下载；第一次构建慢，后续命中 cache
+RUN --mount=type=cache,target=/root/.m2 \
+    ./mvnw -B -q -ntp dependency:go-offline -DskipTests
+
+# 拷贝源码并构建
+COPY src ./src
+RUN --mount=type=cache,target=/root/.m2 \
+    ./mvnw -B -q -ntp package -DskipTests \
+    && mv target/*.jar /app.jar
+
+# ------------ Stage 2: 运行镜像 ------------
+FROM eclipse-temurin:17-jre
+
+ENV TZ=Asia/Shanghai \
+    JAVA_OPTS="-Xms256m -Xmx1024m"
+
+WORKDIR /app
+
+# 可执行 jar
+COPY --from=builder /app.jar ./jarvis.jar
+
+# 日志与 H2 文件库持久化目录（volume 挂载到主机）
+RUN mkdir -p /app/log /app/data
+
+EXPOSE 8080
+
+ENTRYPOINT ["sh", "-c", \
+    "java $JAVA_OPTS \
+      -Dlogging.file.path=/app/log \
+      -Duser.timezone=$TZ \
+      -jar jarvis.jar"]

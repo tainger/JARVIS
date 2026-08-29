@@ -1,0 +1,43 @@
+# ================================================================
+# 前端 Dockerfile（Node 构建 → Nginx 托管静态资源 + /api 反代后端）
+# 构建：
+#   docker build -f deploy/Dockerfile.frontend -t jarvis-frontend \
+#     --build-arg VITE_API_BASE_URL=/api .
+# 运行阶段只含 nginx，镜像很小（~40MB）
+# ================================================================
+
+# ------------ Stage 1: Vite 构建 ------------
+FROM node:20-alpine AS builder
+
+# 允许构建期注入 API Base；默认 /api，Nginx 里会做反代，
+# 所以也可以改成 https://jarvis.example.com/api
+ARG VITE_API_BASE_URL=/api
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
+WORKDIR /app
+
+# 依赖层缓存
+COPY web/package.json web/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+
+# 源码
+COPY web/ ./
+RUN npm run build
+
+# ------------ Stage 2: Nginx 托管 + 反代 /api ------------
+FROM nginx:1.27-alpine
+
+ENV TZ=Asia/Shanghai
+RUN ln -sf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# 拷贝 Nginx 配置（模板化，运行时用 envsubst 填 BACKEND_HOST）
+COPY deploy/nginx.conf.template /etc/nginx/templates/default.conf.template
+
+# 前端构建产物
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+# Nginx 容器内置 /docker-entrypoint.d/*.conf 会自动执行 envsubst，
+# 我们只需要在启动时把 ${BACKEND_HOST} 这类占位符替换进 default.conf 即可
+CMD ["nginx", "-g", "daemon off;"]

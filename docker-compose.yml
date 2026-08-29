@@ -1,0 +1,151 @@
+# ================================================================
+# JARVIS 一键部署：后端 + 前端 + Ollama（向量模型 bge-m3）
+#
+# 端口占用（可在 .env 修改）：
+#   - 前端 Nginx         JARVIS_FRONTEND_PORT=8080
+#   - Spring Boot 后端   JARVIS_BACKEND_PORT=18080（直接访问用；
+#                        一般只经由前端 /api 反代）
+#   - Ollama             OLLAMA_PORT=11434
+#   - Ollama WebUI（可选）OLLAMA_WEBUI_PORT=3000
+#
+# 使用：
+#   cp deploy/.env.example .env
+#   # 编辑 .env：至少填 AGENTSCOPE_API_KEY，确认 MODEL 列表
+#   docker compose up -d
+#   # 首次会自动拉 bge-m3（几十秒到几分钟，看网络）
+#   # 浏览器 http://localhost:${JARVIS_FRONTEND_PORT:-8080}
+# ================================================================
+
+services:
+
+  # ---------------------------------------------------------------
+  # ① Ollama 向量服务（本机没有 GPU 时用 CPU 也能跑 embedding）
+  #    挂载 named volume 保存模型 blobs，容器重建无需重拉
+  # ---------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:0.23
+    container_name: jarvis-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 10s
+    # 有 Nvidia 显卡 + nvidia-docker 时取消注释可启用 GPU 加速
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # 首次启动的一次性初始化：pull bge-m3（compose 会等到成功再退出）
+  ollama-init:
+    image: curlimages/curl:8.8
+    container_name: jarvis-ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c", " \
+        set -e; \
+        echo '[ollama-init] pulling ${RAG_EMBEDDING_MODEL:-bge-m3}...'; \
+        until curl -sf http://ollama:11434/api/tags >/dev/null; \
+          do echo '  waiting for ollama...'; sleep 3; done; \
+        curl -sSf http://ollama:11434/api/pull \
+          -d '{\"name\":\"${RAG_EMBEDDING_MODEL:-bge-m3}\",\"stream\":false}' \
+          -H 'Content-Type: application/json'; \
+        echo; \
+        echo '[ollama-init] done. available models:'; \
+        curl -sSf http://ollama:11434/api/tags; \
+      "]
+    restart: "no"
+
+  # ---------------------------------------------------------------
+  # ② 后端 Spring Boot
+  # ---------------------------------------------------------------
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    image: jarvis-backend
+    container_name: jarvis-backend
+    restart: unless-stopped
+    depends_on:
+      ollama-init:
+        condition: service_completed_successfully
+    environment:
+      # --- DeepSeek 聊天模型（必填）---
+      - AGENTSCOPE_API_KEY=${AGENTSCOPE_API_KEY:?请在 .env 填入真实的 AGENTSCOPE_API_KEY}
+      - AGENTSCOPE_BASE_URL=${AGENTSCOPE_BASE_URL:-https://api.deepseek.com/v1}
+      - AGENTSCOPE_MODEL=${AGENTSCOPE_MODEL:-deepseek-chat}
+      # --- Agent ---
+      - AGENTSCOPE_AGENT_NAME=${AGENTSCOPE_AGENT_NAME:-jarvis-assistant}
+      - AGENTSCOPE_AGENT_MAX_ITERS=${AGENTSCOPE_AGENT_MAX_ITERS:-10}
+      # --- RAG：通过 compose 服务名访问 Ollama ---
+      - RAG_EMBEDDING_BASE_URL=http://ollama:11434
+      - RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL:-bge-m3}
+      - RAG_TOP_K=${RAG_TOP_K:-4}
+      # --- JVM ---
+      - JAVA_OPTS=-Xms256m -Xmx${BACKEND_MAX_MEM_MB:-1024}m
+    ports:
+      - "${JARVIS_BACKEND_PORT:-18080}:8080"
+    volumes:
+      - backend_logs:/app/log
+      - backend_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/knowledge/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ---------------------------------------------------------------
+  # ③ 前端：Nginx 托管静态资源 + /api 反代到 backend:8080
+  # ---------------------------------------------------------------
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+      args:
+        VITE_API_BASE_URL: /api
+    image: jarvis-frontend
+    container_name: jarvis-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - BACKEND_HOST=http://backend:8080
+    ports:
+      - "${JARVIS_FRONTEND_PORT:-8080}:80"
+
+  # ---------------------------------------------------------------
+  # ④ 可选：Ollama WebUI（用来可视化看模型、聊天测试）
+  #    部署公网时记得改 .env 里 OLLAMA_WEBUI_ENABLE=false 注释掉
+  # ---------------------------------------------------------------
+  ollama-webui:
+    profiles: ["webui"]
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: jarvis-ollama-webui
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    volumes:
+      - ollama_webui_data:/app/backend/data
+    ports:
+      - "${OLLAMA_WEBUI_PORT:-3000}:8080"
+
+volumes:
+  ollama_data:        # 向量模型 blobs
+  ollama_webui_data:  # WebUI 用户/会话
+  backend_logs:       # jarvis-info.log 等
+  backend_data:       # 如果将来把 H2 切到文件库就用这里

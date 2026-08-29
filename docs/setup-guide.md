@@ -273,7 +273,160 @@ npm run dev
 
 ---
 
-## 7. 快速自检清单（上线前必查）
+## 9. Docker 部署（推荐生产/演示/一键起）
+
+部署拓扑（一键 docker compose up）：
+
+```
+                            主机浏览器
+                                │
+                                ▼  8080（可在 .env 改）
+                     ┌─────────────────────┐
+                     │   jarvis-frontend   │  Nginx：托管静态 SPA + /api 反代
+                     │   (nginx:1.27-alpine)│  + SSE 流式无缓冲 + SPA fallback
+                     └──────────┬──────────┘
+                                │ /api  →  http://backend:8080
+                                ▼
+                     ┌─────────────────────┐
+                     │   jarvis-backend    │  Spring Boot 4 / JRE 17
+                     │   (自建，~500MB)    │  RAG_EMBEDDING_BASE_URL=http://ollama:11434
+                     └──────────┬──────────┘
+                                │ 向量请求
+                                ▼  11434（容器内，可按 .env OLLAMA_PORT 映射到主机）
+                     ┌─────────────────────┐
+                     │       ollama        │  bge-m3 等模型存 named volume
+                     │   (ollama/ollama)   │  ollama-init 首次自动 pull bge-m3
+                     └─────────────────────┘
+```
+
+### 9.1 目录结构（已新增）
+
+```
+JARVIS/
+├── docker-compose.yml                 # Compose 主文件，放根目录（context = ..）
+├── deploy.sh                          # 一键：up / down / check / backup ...
+└── deploy/
+    ├── Dockerfile.backend             # 后端：maven 构建 → jre 运行
+    ├── Dockerfile.frontend            # 前端：node 构建 → nginx
+    ├── nginx.conf.template            # /api 反代 + SSE streaming 配置
+    └── .env.example                   # 环境变量模板
+```
+
+### 9.2 三步启动
+
+```bash
+cd JARVIS
+
+# ① 复制配置模板，至少填 AGENTSCOPE_API_KEY
+cp deploy/.env.example .env
+# 编辑：vim .env
+#  至少改这一行：AGENTSCOPE_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxx
+
+# ② 一键构建 & 启动（首次需要编译前端/后端 + 拉 bge-m3，几分钟）
+./deploy.sh up
+# 或：docker compose up --build -d
+
+# ③ 打开浏览器：http://localhost:8080
+```
+
+启动后可以用：
+
+```bash
+./deploy.sh check     # 端到端健康检查：前端 200 / 后端 200 / 知识库 stats
+./deploy.sh logs -f   # 跟随日志（等价 docker compose logs -f）
+./deploy.sh backup    # 把知识库日志 + Ollama 模型 gzip 到 backup/
+./deploy.sh down      # 停容器（默认保留 named volume，下次不用重拉模型）
+```
+
+### 9.3 端口一览（都能在 `.env` 覆盖）
+
+| 端口变量 | 默认值 | 服务 | 暴露到公网？ |
+|---|---|---|---|
+| `JARVIS_FRONTEND_PORT` | 8080 | Nginx 前端 + `/api` 入口 | **是**（唯一入口）|
+| `JARVIS_BACKEND_PORT`  | 18080 | Spring Boot 直连端口 | 一般否（走前端反代）|
+| `OLLAMA_PORT`          | 11434 | Ollama 管理端口 | 一般否（局域网才开）|
+| `OLLAMA_WEBUI_PORT`    | 3000 | Ollama WebUI（可选）| 一般否 |
+
+### 9.4 bge-m3 在 Docker 中的部署细节
+
+Docker 里 bge-m3 不像本机要手动 `ollama pull`，**compose 做了编排自动化**：
+
+1. **ollama 服务**（`ollama/ollama:0.23`）
+   - volume `ollama_data:/root/.ollama` 存 blobs，容器重建不重下
+   - healthcheck 用 `ollama list` 判定"已就绪"
+2. **ollama-init 一次性容器**
+   - depends_on `ollama: service_healthy`
+   - 启动后 curl `http://ollama:11434/api/pull` 流式=false，一直等到返回成功
+   - 失败 / 拉到一半容器退出也无所谓，下一次 `compose up` 会接着拉
+3. **后端** depends_on `ollama-init: service_completed_successfully`
+   - 保证真正向量化前模型已经存在，不会出现 "model not found"
+4. **后端通过服务名访问 Ollama**：`RAG_EMBEDDING_BASE_URL=http://ollama:11434`，
+   这个值是 compose 文件里写死的（不会误连到 127.0.0.1 → 本机 Ollama）
+
+如果想**换向量模型**（比如 nomic-embed-text / mxbai-embed-large）：
+
+```bash
+# 1) 改 .env
+RAG_EMBEDDING_MODEL=mxbai-embed-large
+
+# 2) 重新初始化（后端也会重启，应用新模型名）
+docker compose run --rm ollama-init
+docker compose restart backend
+```
+
+### 9.5 数据持久化 & 备份
+
+compose 中所有数据都走命名卷，不会因为 `compose down` 丢失：
+
+| named volume | 存什么 | 备注 |
+|---|---|---|
+| `ollama_data` | `/root/.ollama`（bge-m3 等模型 blobs）| 最大；首次下载完后别删 |
+| `backend_logs` | `/app/log`（Logback 三个日志）| 排查 RAG 注入、SSE 报错用 |
+| `backend_data` | `/app/data` | 目前 H2 是内存库没用到；切文件库就落这里 |
+| `ollama_webui_data` | WebUI 用户/会话 | profile=webui 才创建 |
+
+一键备份（会各打一个 tar.gz 到 `backup/`）：
+
+```bash
+./deploy.sh backup
+# backup/jarvis-20260829-170500/
+#   ├── backend-logdata.tar.gz
+#   └── ollama-models.tar.gz
+```
+
+恢复（示例）：
+
+```bash
+docker compose down
+docker run --rm -v jarvis_ollama_data:/dst -v "$(pwd)/backup/jarvis-xxx:/src" \
+  alpine sh -c "cd /dst && tar xzf /src/ollama-models.tar.gz"
+docker compose up -d
+```
+
+### 9.6 GPU 加速（可选）
+
+Ollama 容器默认 CPU，CPU 跑 bge-m3 embedding 已经够用（单批 ≈ 100ms 级）。
+如果有 Nvidia GPU：
+
+1. 安装 `nvidia-docker`
+2. `docker-compose.yml` 里 `ollama` 服务下取消注释 `deploy.resources.reservations.devices` 那段
+3. `docker compose up -d --force-recreate ollama`
+4. `ollama-init` 跑完后看 WebUI 或 `docker exec jarvis-ollama nvidia-smi`，确认 GPU 被占用
+
+### 9.7 部署到公网要改的几件事
+
+| 项 | 建议 |
+|---|---|
+| 端口暴露 | 只暴露 `frontend`（8080），`OLLAMA_PORT` / `JARVIS_BACKEND_PORT` 从 compose 的 `ports:` 里删掉 |
+| H2 Console | 在 `nginx.conf.template` 里删除 `/h2-console/` 那段；或生产改 H2 为 PostgreSQL |
+| HTTPS | 在前端之前加 Caddy / Nginx 做 TLS，certbot 签 Let's Encrypt |
+| Key 校验 | 确认 `.env` 里 `AGENTSCOPE_API_KEY` 真实有效，别把 `.env.example` 抄过去 |
+| 限流 | Nginx 加 `limit_req_zone` 限 `/api/agent/chat/stream`（SSE 耗 token）|
+| 知识库 | 导入的文档会进容器的卷；记得定期 `./deploy.sh backup` |
+
+---
+
+## 10. 快速自检清单（上线前必查）
 
 | # | 检查项 | 命令/位置 |
 |---|---|---|
@@ -290,7 +443,9 @@ npm run dev
 
 ---
 
-## 8. 关闭服务
+## 10. 关闭服务
+
+### 10.1 本地开发部署
 
 ```bash
 # 前端：Ctrl+C 停 dev server，或：
@@ -304,9 +459,19 @@ pkill -x ollama
 # Ollama App 方式在状态栏图标 → Quit 即可
 ```
 
+### 10.2 Docker 部署
+
+```bash
+./deploy.sh down      # 保留数据卷，下次 up 不用重拉 bge-m3 / 重新编译
+# 或：docker compose down
+
+# 真正干净地连数据卷一起删（会丢失知识库数据！慎用）
+docker compose down -v
+```
+
 ---
 
-## 9. 配置文件索引
+## 11. 配置文件索引
 
 | 配置点 | 位置 |
 |---|---|
@@ -316,3 +481,9 @@ pkill -x ollama
 | Vite 端口 / `/api` 代理目标 | `web/vite.config.js` |
 | Axios 封装 / 知识库 API 封装 | `web/src/api/client.js` |
 | 全局错误格式（401/429/500 JSON）| `controller/GlobalExceptionHandler.java` |
+| Compose 编排 + 服务依赖 + 自动 pull bge-m3 | `docker-compose.yml` |
+| 后端镜像：maven 分层缓存 + JRE 运行 | `deploy/Dockerfile.backend` |
+| 前端镜像：Vite build + Nginx 反代 | `deploy/Dockerfile.frontend` |
+| Nginx SSE 无缓冲 + SPA fallback | `deploy/nginx.conf.template` |
+| 环境变量模板（API Key / 端口 / 模型）| `deploy/.env.example` |
+| 一键脚本（up/down/check/backup）| `deploy.sh` |
