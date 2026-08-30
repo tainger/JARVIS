@@ -2,6 +2,24 @@
 -- 已存在的表/索引原样保留，数据跨重启持久化。
 -- 注意：MySQL 不支持 CREATE INDEX IF NOT EXISTS，索引放在建表语句内（KEY ...）保证幂等。
 
+-- ---------- 用户登录模块 ----------
+
+CREATE TABLE IF NOT EXISTS sys_user (
+    id            BIGINT       AUTO_INCREMENT PRIMARY KEY,
+    username      VARCHAR(64)  NOT NULL COMMENT '登录用户名，唯一',
+    password_hash VARCHAR(255) NOT NULL COMMENT 'BCrypt 加密后的密码',
+    nickname      VARCHAR(128)          COMMENT '显示昵称',
+    email         VARCHAR(128)          COMMENT '邮箱',
+    role          VARCHAR(32)  NOT NULL DEFAULT 'USER' COMMENT '角色：ADMIN / USER',
+    status        VARCHAR(16)  NOT NULL DEFAULT 'ACTIVE' COMMENT '状态：ACTIVE / DISABLED',
+    avatar_url    VARCHAR(512)          COMMENT '头像URL',
+    last_login_at TIMESTAMP   NULL COMMENT '最近登录时间',
+    created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_sys_user_username (username),
+    KEY idx_sys_user_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统用户表';
+
 CREATE TABLE IF NOT EXISTS task (
     id          BIGINT AUTO_INCREMENT PRIMARY KEY,
     title       VARCHAR(255) NOT NULL,

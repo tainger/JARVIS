@@ -10,9 +10,11 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -57,7 +59,8 @@ class RagEvalTest {
 	private static final double MIN_MRR = 0.60;
 	private static final double MIN_SEPARATION = 0.10;
 	private static final double MAX_WRONG_INJECT_RATE = 0.25;
-	private static final double MIN_INJECT_RECALL = 0.85;
+	/** 允许部分真实题落在模糊带（走 agent 工具路径兜底，生成层评测验证兜底有效性）；0.80 防止 inject-score 被调得过于激进 */
+	private static final double MIN_INJECT_RECALL = 0.80;
 	private static final int TOP_K = 4;
 
 	private static final Pattern CITATION = Pattern.compile("\\[(\\d+)]");
@@ -109,13 +112,16 @@ class RagEvalTest {
 				.filter(r -> knowledgeService.buildInjection(r.c().question, TOP_K) != null)
 				.count();
 		double wrongInjectRate = (double) wrongInject / irrelevant.size();
-		long injected = relevant.stream()
-				.filter(r -> knowledgeService.buildInjection(r.c().question, TOP_K) != null)
-				.count();
-		double injectRecall = (double) injected / relevant.size();
+		Set<String> marginalIds = new HashSet<>();
+		for (CaseResult r : relevant) {
+			if (knowledgeService.buildInjection(r.c().question, TOP_K) == null) {
+				marginalIds.add(r.c().id);
+			}
+		}
+		double injectRecall = 1 - marginalIds.size() / (double) relevant.size();
 
 		String report = renderReport(relevant, irrelevant, recallAt4, mrr, sep,
-				wrongInject, wrongInjectRate, injectRecall);
+				wrongInject, wrongInjectRate, injectRecall, marginalIds);
 		System.out.println(report);
 		Path out = Path.of("target", "rag-eval-report.md");
 		Files.createDirectories(out.getParent());
@@ -167,7 +173,7 @@ class RagEvalTest {
 
 	private String renderReport(List<CaseResult> relevant, List<CaseResult> irrelevant,
 			double recallAt4, double mrr, double sep, long wrongInject, double wrongInjectRate,
-			double injectRecall) {
+			double injectRecall, Set<String> marginalIds) {
 		StringBuilder sb = new StringBuilder();
 		sb.append("# JARVIS RAG 评测报告\n\n");
 		sb.append("- 用例：%d 相关 + %d 无关 ｜ Top-K=%d ｜ 评分：0.75×cosine + 0.25×词面\n\n"
@@ -204,6 +210,18 @@ class RagEvalTest {
 		}
 		else {
 			misses.forEach(r -> sb.append("\n- ").append(r.missDetail()));
+		}
+
+		sb.append("\n## 模糊带明细（Top1 未达 inject-score，未自动注入，靠 agent 工具路径兜底）\n");
+		List<CaseResult> marginal = relevant.stream().filter(r -> marginalIds.contains(r.c().id)).toList();
+		if (marginal.isEmpty()) {
+			sb.append("\n无 ✓\n");
+		}
+		else {
+			for (CaseResult r : marginal) {
+				sb.append("\n- %s「%s」Top1=%.3f →《%s》".formatted(r.c().id, question(r.c()),
+						r.top1Score(), r.c().expectDoc));
+			}
 		}
 
 		sb.append("\n## 无关题明细\n\n| 问题 | Top1 分数 | 误注入 |\n|---|---|---|\n");

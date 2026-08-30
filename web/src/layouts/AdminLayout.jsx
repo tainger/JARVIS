@@ -7,14 +7,15 @@ import {
   MenuUnfoldOutlined,
   MessageOutlined,
   RobotOutlined,
-  SettingOutlined,
-  TeamOutlined,
-  UnorderedListOutlined,
+  CrownOutlined,
   UserOutlined,
+  UnorderedListOutlined,
+  TeamOutlined,
   BookOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BRAND, CLAY, CLAY_SHADOW, LAYOUT, RADIUS } from '../theme'
+import { authStore } from '../api/client'
 
 const { Sider, Header, Content, Footer } = Layout
 
@@ -76,18 +77,52 @@ export default function AdminLayout() {
   const location = useLocation()
   const navigate = useNavigate()
 
-  const user = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem('jarvis_user') || 'null')
-    } catch {
-      return null
-    }
-  }, [])
+  // 当前登录用户信息（从 localStorage 读取；每次切换路由/刷新都会重渲染）
+  const user = useMemo(() => authStore.getUser(), [location.pathname])
 
+  /** 退出登录：清理本地缓存并跳登录页 */
   const handleLogout = () => {
-    localStorage.removeItem('jarvis_user')
+    authStore.logout()
     navigate('/login', { replace: true })
   }
+
+  /** 昵称：优先 nickname，否则 username，兜底 "用户" */
+  const displayName = user?.nickname || user?.username || '用户'
+
+  /** 取名字首字/字母作为头像文字（无头像 URL 时） */
+  const avatarText = displayName
+    ? Array.from(displayName)[0].toUpperCase()
+    : 'U'
+
+  /** 角色显示：ADMIN 用紫色皇冠标签，USER 用薄荷色普通用户标签 */
+  const roleTag =
+    user?.role === 'ADMIN' ? (
+      <Tag
+        icon={<CrownOutlined />}
+        style={{
+          background: CLAY.purpleTint,
+          color: CLAY.purple,
+          fontWeight: 800,
+          boxShadow: CLAY_SHADOW.small,
+          border: 'none',
+        }}
+      >
+        管理员
+      </Tag>
+    ) : (
+      <Tag
+        icon={<UserOutlined />}
+        style={{
+          background: CLAY.mintTint,
+          color: CLAY.mint,
+          fontWeight: 700,
+          boxShadow: CLAY_SHADOW.small,
+          border: 'none',
+        }}
+      >
+        用户
+      </Tag>
+    )
 
   const siderWidth = LAYOUT.siderWidth
 
@@ -171,7 +206,9 @@ export default function AdminLayout() {
           >
             {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           </span>
-          <Space size="middle">
+
+          <Space size="middle" align="center">
+            {/* Agent 在线标签 */}
             <Tag
               icon={<RobotOutlined />}
               style={{
@@ -179,17 +216,32 @@ export default function AdminLayout() {
                 color: CLAY.mint,
                 fontWeight: 700,
                 boxShadow: CLAY_SHADOW.small,
+                border: 'none',
               }}
             >
               Agent 在线
             </Tag>
+
+            {/* 用户角色标签 */}
+            {roleTag}
+
+            {/* 用户下拉菜单（个人信息 + 退出） */}
             <Dropdown
               menu={{
                 items: [
                   {
-                    key: 'profile',
-                    icon: <SettingOutlined />,
-                    label: '个人设置',
+                    key: 'profile-info',
+                    label: (
+                      <div>
+                        <div style={{ fontWeight: 800, color: CLAY.ink }}>{displayName}</div>
+                        <div style={{ fontSize: 12, color: CLAY.inkSoft }}>
+                          @{user?.username || 'guest'}
+                        </div>
+                        {user?.email && (
+                          <div style={{ fontSize: 12, color: CLAY.inkSoft }}>{user.email}</div>
+                        )}
+                      </div>
+                    ),
                     disabled: true,
                   },
                   { type: 'divider' },
@@ -213,11 +265,27 @@ export default function AdminLayout() {
               >
                 <Avatar
                   size={32}
-                  icon={<UserOutlined />}
-                  style={{ background: BRAND.primary, fontWeight: 700 }}
-                />
-                <span style={{ fontWeight: 700, color: CLAY.ink }}>
-                  {user?.name || 'admin'}
+                  src={user?.avatarUrl || null}
+                  style={{
+                    background: BRAND.primary,
+                    fontWeight: 800,
+                    fontSize: 14,
+                    boxShadow: CLAY_SHADOW.small,
+                  }}
+                >
+                  {user?.avatarUrl ? null : avatarText}
+                </Avatar>
+                <span
+                  style={{
+                    fontWeight: 700,
+                    color: CLAY.ink,
+                    maxWidth: 120,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {displayName}
                 </span>
               </Space>
             </Dropdown>

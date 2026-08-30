@@ -98,7 +98,7 @@ public class RagProperties {
 		 * 自动注入的更高门槛：Top1 达到该值才把片段塞进 prompt（入口 A）。
 		 * 落在 [minScore, injectScore) 模糊带的消息不自动注入——多为"工具意图"等域内噪声
 		 * （如"帮我列出所有任务"能和简历内容算出 0.4+），交给 agent 自主决定是否调
-		 * knowledge_search 工具。由评测系统校准（见 docs/rag-design.md 基线）。
+		 * knowledge_search 工具。由评测跑分校准（见 docs/rag-design.md 基线）。
 		 */
 		private double injectScore = 0.50;
 
