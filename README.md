@@ -40,7 +40,9 @@ open http://localhost:8080      # 访问前端
 
 | 文档 | 说明 |
 |---|---|
-| [docs/setup-guide.md](docs/setup-guide.md) | **完整启动与配置指南**（环境 → Ollama & bge-m3 详解 → 启动 → RAG 使用 → Docker 部署）|
+| [docs/setup-guide.md](docs/setup-guide.md) | **完整启动与配置指南**（环境 → MySQL → Ollama & bge-m3 详解 → 启动 → RAG 使用 → Docker 部署）|
+| [docs/rag-design.md](docs/rag-design.md) | **RAG 设计文档**（工作流程与原理 → 缺点 → Phase 1~3 演进路线）|
+| [docs/llm-wiki-research.md](docs/llm-wiki-research.md) | LLM Wiki / 知识编译技术调研（M1~M3 选型）|
 | [docs/java-dsh-design.md](docs/java-dsh-design.md) | JARVIS = DeepSeek Harness（DSH）Java 版 架构设计稿（M1~M5）|
 
 ## 目录
@@ -53,7 +55,7 @@ open http://localhost:8080      # 访问前端
 │   ├── Dockerfile.frontend   前端：Vite build + Nginx 反代
 │   ├── nginx.conf.template   Nginx 模板（/api 反代 + SSE 无缓冲）
 │   └── .env.example          环境变量模板
-├── src/                      后端 Java 代码（Spring Boot 4 / MyBatis / H2 / AgentScope / RAG）
+├── src/                      后端 Java 代码（Spring Boot 4 / MyBatis / MySQL / AgentScope / RAG）
 │   └── main/java/com/example/jarvis/rag/   RAG 核心（Ollama 客户端 + KnowledgeService）
 ├── web/                      前端 React + Ant Design（Vite）
 ├── docs/                     设计 & 指南文档
