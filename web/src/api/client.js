@@ -29,7 +29,8 @@ export const knowledgeApi = {
 
 /**
  * Stream chat reply via SSE (POST /api/agent/chat/stream).
- * Yields text deltas as they arrive. Abort via AbortController.
+ * Yields { event, data } frames: event ∈ 'message'(默认文本增量) |
+ * 'sources'(引用的知识库片段 JSON) | 'error'(后端错误帧). Abort via AbortController.
  */
 export async function* streamChat(message, signal) {
   const resp = await fetch('/api/agent/chat/stream', {
@@ -52,11 +53,13 @@ export async function* streamChat(message, signal) {
     while ((idx = buffer.indexOf('\n\n')) >= 0) {
       const frame = buffer.slice(0, idx)
       buffer = buffer.slice(idx + 2)
-      const dataLine = frame.split('\n').find((l) => l.startsWith('data:'))
-      if (dataLine) {
-        const payload = dataLine.slice(5).trim()
-        if (payload) yield payload
-      }
+      const lines = frame.split('\n')
+      const eventLine = lines.find((l) => l.startsWith('event:'))
+      const dataLines = lines.filter((l) => l.startsWith('data:'))
+      if (!dataLines.length) continue
+      const payload = dataLines.map((l) => l.slice(5).trim()).join('\n')
+      if (!payload) continue
+      yield { event: eventLine ? eventLine.slice(6).trim() : 'message', data: payload }
     }
   }
 }

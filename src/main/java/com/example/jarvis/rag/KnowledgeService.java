@@ -173,10 +173,11 @@ public class KnowledgeService {
 	}
 
 	/**
-	 * 检索并格式化为可注入 prompt 的上下文文本；无足够相关的命中返回 null。
+	 * 检索并组装"带引用编号的注入上下文"：片段按 [1..n] 编号（与返回的 hits 顺序一致，
+	 * 供前端渲染来源卡片），无足够相关的命中返回 null。
 	 * 这里做 minScore 过滤：注入对话的片段必须过相关性门槛，避免噪声污染回答。
 	 */
-	public String buildContext(String query, Integer topK) {
+	public RagInjection buildInjection(String query, Integer topK) {
 		List<SearchHit> hits = search(query, topK).stream()
 				.filter(hit -> hit.score() >= properties.getRetrieval().getMinScore())
 				.toList();
@@ -189,7 +190,11 @@ public class KnowledgeService {
 			sb.append(String.format("[%d] 来源：%s（片段 %d，相关度 %.3f）%n%s%n%n",
 					i + 1, hit.documentTitle(), hit.seq(), hit.score(), hit.content()));
 		}
-		return sb.toString().strip();
+		return new RagInjection(sb.toString().strip(), List.copyOf(hits));
+	}
+
+	/** 注入上下文 + 命中片段（编号一一对应，供回答引用来源展示） */
+	public record RagInjection(String context, List<SearchHit> hits) {
 	}
 
 	/**

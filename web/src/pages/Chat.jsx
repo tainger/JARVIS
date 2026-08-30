@@ -37,7 +37,7 @@ export default function Chat() {
     setError('')
 
     const userMsg = { role: 'user', content }
-    const botMsg = { role: 'assistant', content: '' }
+    const botMsg = { role: 'assistant', content: '', sources: [] }
     setMessages((prev) => [...prev, userMsg, botMsg])
     setStreaming(true)
 
@@ -46,13 +46,35 @@ export default function Chat() {
 
     try {
       let acc = ''
-      for await (const delta of streamChat(content, controller.signal)) {
-        acc += delta
-        setMessages((prev) => {
-          const next = [...prev]
-          next[next.length - 1] = { role: 'assistant', content: acc }
-          return next
-        })
+      for await (const { event, data } of streamChat(content, controller.signal)) {
+        if (event === 'message') {
+          acc += data
+          setMessages((prev) => {
+            const next = [...prev]
+            next[next.length - 1] = { ...next[next.length - 1], content: acc }
+            return next
+          })
+        } else if (event === 'sources') {
+          let parsed = []
+          try {
+            parsed = JSON.parse(data)
+          } catch {
+            parsed = []
+          }
+          setMessages((prev) => {
+            const next = [...prev]
+            next[next.length - 1] = { ...next[next.length - 1], sources: parsed }
+            return next
+          })
+        } else if (event === 'error') {
+          let msg = data
+          try {
+            msg = JSON.parse(data).error || data
+          } catch {
+            // 保留原始文本
+          }
+          throw new Error(msg)
+        }
       }
     } catch (e) {
       if (e.name !== 'AbortError') {
@@ -179,6 +201,7 @@ export default function Chat() {
                     ) : (
                       <Spin indicator={<LoadingOutlined spin />} size="small" />
                     )}
+                    <SourceList sources={msg.sources} />
                   </div>
                 </div>
               ),
@@ -235,5 +258,62 @@ export default function Chat() {
         )}
       </div>
     </Card>
+  )
+}
+
+/**
+ * AI 回答下方的知识库来源卡片：与回答中的 [n] 编号一一对应，
+ * 点击展开片段摘要原文。
+ */
+function SourceList({ sources }) {
+  const [openRef, setOpenRef] = useState(null)
+  if (!sources || sources.length === 0) return null
+  return (
+    <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed rgba(108,92,231,0.25)' }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: BRAND.primary, marginBottom: 6 }}>
+        📚 知识库来源
+      </div>
+      <Space direction="vertical" size={6} style={{ width: '100%' }}>
+        {sources.map((s) => (
+          <div
+            key={s.ref}
+            onClick={() => setOpenRef(openRef === s.ref ? null : s.ref)}
+            style={{
+              cursor: 'pointer',
+              background: CLAY.mintTint,
+              borderRadius: 16,
+              padding: '6px 12px',
+              fontSize: 12,
+              fontWeight: 700,
+              lineHeight: 1.5,
+            }}
+          >
+            <Space size={6} wrap>
+              <span style={{ fontWeight: 800 }}>
+                [{s.ref}] {s.documentTitle}
+              </span>
+              <span style={{ color: 'rgba(0,0,0,0.45)' }}>片段 {s.seq}</span>
+              <Tag style={{ background: '#fff', color: CLAY.mint, fontWeight: 800, borderRadius: 999 }}>
+                {(s.score * 100).toFixed(0)}%
+              </Tag>
+            </Space>
+            {openRef === s.ref && (
+              <div
+                style={{
+                  marginTop: 6,
+                  padding: '8px 10px',
+                  background: '#fff',
+                  borderRadius: 12,
+                  fontWeight: 500,
+                  color: 'rgba(0,0,0,0.72)',
+                }}
+              >
+                {s.snippet}
+              </div>
+            )}
+          </div>
+        ))}
+      </Space>
+    </div>
   )
 }
