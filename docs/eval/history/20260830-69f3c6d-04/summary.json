@@ -1,0 +1,171 @@
+{
+  "suite" : "generation",
+  "runId" : "20260830-69f3c6d-04",
+  "timestamp" : "2026-08-30T07:41:00.024207Z",
+  "gitCommit" : "69f3c6d63a8db827cf54eae371f7d0a9d0bcadca",
+  "caseCounts" : {
+    "cases" : 14
+  },
+  "metrics" : {
+    "answerHitRate" : 0.8571428571428571,
+    "citationAccuracy" : 1.0,
+    "faithfulnessAvg" : 4.384615384615385
+  },
+  "latency" : {
+    "e2eP50" : 2422.0,
+    "e2eP95" : 5654.0,
+    "case.hb-exact-01" : 2465.0,
+    "case.hb-para-02" : 2150.0,
+    "case.hb-exact-04" : 1755.0,
+    "case.hb-num-05" : 1658.0,
+    "case.hb-num-06" : 1949.0,
+    "case.hb-mix-07" : 1628.0,
+    "case.hb-para-08" : 1480.0,
+    "case.rs-exact-12" : 2422.0,
+    "case.rs-para-14" : 5654.0,
+    "case.rs-exact-16" : 4101.0,
+    "case.rs-num-20" : 2510.0,
+    "case.rs-exact-21" : 2903.0,
+    "case.rs-mix-22" : 2754.0,
+    "case.wk-para-25" : 2550.0
+  },
+  "cases" : [ {
+    "id" : "hb-exact-01",
+    "type" : "精确词",
+    "question" : "JARVIS-Office 是什么",
+    "keywordsOk" : true,
+    "citationNote" : "[1]→JARVIS 团队手册 ✓",
+    "faithScore" : 5,
+    "faithReason" : "回答内容完全由检索片段支撑，未添加任何额外信息或矛盾内容。",
+    "e2eMs" : 2465
+  }, {
+    "id" : "hb-para-02",
+    "type" : "同义改写",
+    "question" : "出差吃饭一天补多少钱",
+    "keywordsOk" : false,
+    "citationNote" : "[1]→JARVIS 团队手册 ✓",
+    "faithScore" : 5,
+    "faithReason" : "回答内容完全来自检索片段，未添加任何额外信息或与片段矛盾。",
+    "e2eMs" : 2150
+  }, {
+    "id" : "hb-exact-04",
+    "type" : "精确词",
+    "question" : "WiFi 密码在哪里看",
+    "keywordsOk" : true,
+    "citationNote" : "[1]→JARVIS 团队手册 ✓",
+    "faithScore" : 5,
+    "faithReason" : "回答内容完全由检索片段支撑，未添加任何额外信息或矛盾内容。",
+    "e2eMs" : 1755
+  }, {
+    "id" : "hb-num-05",
+    "type" : "表格数字",
+    "question" : "午餐报销多少钱",
+    "keywordsOk" : true,
+    "citationNote" : "[1]→JARVIS 团队手册 ✓",
+    "faithScore" : 5,
+    "faithReason" : "回答内容完全来自检索片段，未添加任何额外信息或矛盾内容。",
+    "e2eMs" : 1658
+  }, {
+    "id" : "hb-num-06",
+    "type" : "表格数字",
+    "question" : "报销超过多少钱需要总监审批",
+    "keywordsOk" : true,
+    "citationNote" : "[1]→JARVIS 团队手册 ✓",
+    "faithScore" : 5,
+    "faithReason" : "回答内容完全由检索片段支撑，未添加任何片段外信息或与片段矛盾。",
+    "e2eMs" : 1949
+  }, {
+    "id" : "hb-mix-07",
+    "type" : "组合",
+    "question" : "出差报销的提交期限是多久",
+    "keywordsOk" : true,
+    "citationNote" : "[1]→JARVIS 团队手册 ✓",
+    "faithScore" : 5,
+    "faithReason" : "回答内容完全来自检索片段，未添加任何额外信息或矛盾内容。",
+    "e2eMs" : 1628
+  }, {
+    "id" : "hb-para-08",
+    "type" : "同义改写",
+    "question" : "公司无线网叫什么名字",
+    "keywordsOk" : true,
+    "citationNote" : "[1]→JARVIS 团队手册 ✓",
+    "faithScore" : 5,
+    "faithReason" : "回答内容完全由检索片段支撑，未添加任何额外信息或矛盾内容。",
+    "e2eMs" : 1480
+  }, {
+    "id" : "rs-exact-12",
+    "type" : "精确词",
+    "question" : "CyberLoRA 的相似度评测用什么模型",
+    "keywordsOk" : true,
+    "citationNote" : "[3]→贾志远的简历 ✓",
+    "faithScore" : 5,
+    "faithReason" : "回答中的ArcFace评测、0.792±0.018数值及对照组-0.019均直接来自检索片段，无额外信息或矛盾。",
+    "e2eMs" : 2422
+  }, {
+    "id" : "rs-para-14",
+    "type" : "同义改写",
+    "question" : "求职者的学历背景怎么样",
+    "keywordsOk" : true,
+    "citationNote" : "无引用",
+    "faithScore" : null,
+    "faithReason" : null,
+    "e2eMs" : 5654
+  }, {
+    "id" : "rs-exact-16",
+    "type" : "精确词",
+    "question" : "AutoDev 流水线分哪几个阶段",
+    "keywordsOk" : true,
+    "citationNote" : "[2]→贾志远的简历 ✓",
+    "faithScore" : 1,
+    "faithReason" : "回答声称AutoDev流水线分为五个阶段并基于AgentScope设计，但检索片段中并无此信息，且与片段内容矛盾。",
+    "e2eMs" : 4101
+  }, {
+    "id" : "rs-num-20",
+    "type" : "表格数字",
+    "question" : "图表渲染效率提升了多少",
+    "keywordsOk" : true,
+    "citationNote" : "[1]→贾志远的简历 ✓",
+    "faithScore" : 1,
+    "faithReason" : "回答声称的Redis+Caffeine两级缓存方案及300%提升在检索片段中完全不存在，与片段内容矛盾。",
+    "e2eMs" : 2510
+  }, {
+    "id" : "rs-exact-21",
+    "type" : "精确词",
+    "question" : "CyberLoRA 用什么显卡训练",
+    "keywordsOk" : true,
+    "citationNote" : "[1]→贾志远的简历 ✓",
+    "faithScore" : 5,
+    "faithReason" : "回答完全基于检索片段，准确描述了T4 GPU、fp16混合精度和AdamW8bit优化器等细节，无额外信息或矛盾。",
+    "e2eMs" : 2903
+  }, {
+    "id" : "rs-mix-22",
+    "type" : "组合",
+    "question" : "贾志远的英语水平如何",
+    "keywordsOk" : false,
+    "citationNote" : "[1]→贾志远的简历 ✓",
+    "faithScore" : 5,
+    "faithReason" : "回答明确指出片段中无英语水平信息，未添加任何片段外内容，完全基于检索片段判断。",
+    "e2eMs" : 2754
+  }, {
+    "id" : "wk-para-25",
+    "type" : "同义改写",
+    "question" : "Wiki 的三个死循环是什么",
+    "keywordsOk" : true,
+    "citationNote" : "[1]→LLM Wiki 技术调研 ✓",
+    "faithScore" : 5,
+    "faithReason" : "回答完全基于检索片段中的三个死循环描述，未添加片段外信息，且与片段内容一致。",
+    "e2eMs" : 2550
+  } ],
+  "config" : {
+    "vectorWeight" : 0.75,
+    "lexicalWeight" : 0.25,
+    "topK" : 4,
+    "minScore" : 0.4,
+    "injectScore" : 0.5,
+    "chunkMaxChars" : 500,
+    "chunkHardLimit" : 800,
+    "chunkOverlapChars" : 80,
+    "embeddingModel" : "bge-m3",
+    "judgeModel" : "deepseek-chat"
+  }
+}

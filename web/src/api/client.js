@@ -156,6 +156,38 @@ export const knowledgeApi = {
 }
 
 // ======================================================================
+// RAG 评测中心 API（只读历史 + 候选池）
+// ======================================================================
+export const evalApi = {
+  /** 评测历史列表（runId 升序即时间序）；目录缺失返回 { items: [] } */
+  history: () => http.get('/knowledge/eval/history').then((r) => r.data),
+
+  /** 单次详情：{ summary, previous, diff }；diff=null 表示基线首次建立 */
+  historyDetail: (runId) =>
+    http.get(`/knowledge/eval/history/${runId}`).then((r) => r.data),
+
+  /** 候选池列表：{ total, page, size, items }；status: pending/promoted/discarded */
+  candidates: ({ status = 'pending', page = 1, size = 20 } = {}) =>
+    http
+      .get('/knowledge/eval/candidates', { params: { status, page, size } })
+      .then((r) => r.data),
+
+  /** 提交候选（Chat 👎 / 手动）。409 表示相同问题已在池中（data.existingId） */
+  submitCandidate: ({ question, note, source, chatRef }) =>
+    http
+      .post('/knowledge/eval/candidates', { question, note, source, chatRef })
+      .then((r) => r.data),
+
+  /** 转正：补全标注 → 写入标注集 → 置 promoted */
+  promoteCandidate: (id, payload) =>
+    http.post(`/knowledge/eval/candidates/${id}/promote`, payload).then((r) => r.data),
+
+  /** 丢弃候选 */
+  discardCandidate: (id) =>
+    http.post(`/knowledge/eval/candidates/${id}/discard`).then((r) => r.data),
+}
+
+// ======================================================================
 // SSE 流式聊天（直接用 fetch，不走 axios；同样注入 token）
 // ======================================================================
 /**

@@ -286,6 +286,7 @@ npm run dev
 | `/chat` | AI 对话 | 调用 `/api/agent/chat/stream`（SSE 流式 + **命中知识库自动注入上下文**）|
 | `/tasks` | 任务管理 | CRUD H2 task 表 |
 | `/knowledge` | **知识库** | 上传 .md/.txt、粘贴导入、删除、检索测试（§6）|
+| `/eval` | **评测中心** | RAG 评测历史/趋势/用例明细/候选池 triage（§7）|
 | `/agents` | 智能体管理 | 查看已注册工具 |
 
 ---
@@ -328,6 +329,50 @@ curl -s -X POST http://localhost:8080/api/knowledge/documents \
 
 **注意**：停止后端务必用优雅方式（Ctrl+C 或 `kill <pid>`），`kill -9` 可能丢失未落盘的事务。
 MySQL 的数据目录见 §4.0（本机 /tmp/jarvis-mysql-data，重启机器后需重新初始化并导入种子文档）。
+
+---
+
+## 7. RAG 评测系统
+
+> 设计与决策详见 [openspec/changes/add-rag-eval-system](../openspec/changes/add-rag-eval-system/proposal.md)；
+> 指标基线见 [docs/rag-design.md](rag-design.md) §四基线章节。
+
+### 7.1 一键跑评测
+
+```bash
+./run-eval.sh          # 检索层（零 token，需本地 Ollama + 后端 8080 运行中）
+./run-eval.sh --llm    # 追加生成层（走真实 DeepSeek chat 链路 + LLM-as-judge 忠实度评分）
+```
+
+每次运行自动归档到 `docs/eval/history/<UTC日期>-<git短哈希>-<序号>/`（`summary.json` + `report.md`），
+报告自动与上一次同 suite 归档 diff（±0.03 显著标记）。指标跌破基线时测试失败，脚本非零退出。
+
+### 7.2 触发机制（可选）
+
+```bash
+./deploy/hooks/install.sh   # 安装 git pre-push 钩子
+```
+
+改动 `rag/**`、`application.properties`、`schema.sql`、标注集或 eval 包后 push 会先跑检索层评测，
+失败则拒绝 push（`git push --no-verify` 可逃生）。CI 见 `.github/workflows/eval.yml`（paths 触发，
+只跑检索层，归档上传为 artifact）。
+
+### 7.3 候选池流水线（坏 case 收集）
+
+1. **入池**：聊天页每条 AI 回答右下角点 **👎 回答不满意**，填一句备注提交；
+   或直接 `POST /api/knowledge/eval/candidates`。
+2. **triage**：前端 **评测中心**（`/eval`）底部候选池区块，填查询类型 / 期望文档 / 关键词后点 **转正**，
+   用例追加写入标注集 `src/test/resources/rag-eval-cases.json`；不合适的点 **丢弃**。
+
+### 7.4 评测中心（/eval）
+
+- **指标卡**：最新一次检索层运行的 Recall@4 / MRR / 误注入率 / 注入召回与达标状态；
+- **趋势图**：Recall@4 / MRR 随运行次数的变化（≥2 次归档后展示）；
+- **评测历史**：点任意行打开详情抽屉——与上次的指标 diff 表 + 用例明细表（按类型/结果筛选，未命中用例展开查看 Top-K 命中详情）；
+- **候选池 triage**：见 §7.3。
+
+历史 API（只读、登录鉴权）：`GET /api/knowledge/eval/history`、`GET .../history/{runId}`。
+Docker 部署时归档目录通过 `eval_history` 卷持久化（`/app/docs/eval/history`），容器重建不丢历史。
 
 ---
 

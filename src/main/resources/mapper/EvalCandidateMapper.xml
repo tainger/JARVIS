@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.jarvis.mapper.EvalCandidateMapper">
+
+	<sql id="cols">
+		id, question, question_norm, note, expected_doc, source, chat_ref,
+		status, created_at, triaged_at
+	</sql>
+
+	<select id="findById" resultType="com.example.jarvis.model.EvalCandidate">
+		SELECT <include refid="cols"/> FROM eval_candidate WHERE id = #{id}
+	</select>
+
+	<select id="findPendingByNorm" resultType="com.example.jarvis.model.EvalCandidate">
+		SELECT <include refid="cols"/> FROM eval_candidate
+		WHERE question_norm = #{questionNorm} AND status = 'pending'
+		LIMIT 1
+	</select>
+
+	<insert id="insert" useGeneratedKeys="true" keyProperty="id">
+		INSERT INTO eval_candidate (question, question_norm, note, expected_doc, source, chat_ref, status)
+		VALUES (#{question}, #{questionNorm}, #{note}, #{expectedDoc}, #{source}, #{chatRef}, 'pending')
+	</insert>
+
+	<select id="findByStatus" resultType="com.example.jarvis.model.EvalCandidate">
+		SELECT <include refid="cols"/> FROM eval_candidate
+		WHERE status = #{status}
+		ORDER BY created_at DESC, id DESC
+		LIMIT #{offset}, #{size}
+	</select>
+
+	<select id="countByStatus" resultType="long">
+		SELECT COUNT(*) FROM eval_candidate WHERE status = #{status}
+	</select>
+
+	<update id="markPromoted">
+		UPDATE eval_candidate
+		SET status = 'promoted', expected_doc = #{expectedDoc}, triaged_at = CURRENT_TIMESTAMP
+		WHERE id = #{id} AND status = 'pending'
+	</update>
+
+	<update id="markDiscarded">
+		UPDATE eval_candidate
+		SET status = 'discarded', triaged_at = CURRENT_TIMESTAMP
+		WHERE id = #{id} AND status = 'pending'
+	</update>
+
+</mapper>

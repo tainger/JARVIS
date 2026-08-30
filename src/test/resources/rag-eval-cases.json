@@ -1,50 +1,404 @@
 [
-  {"id": "hb-exact-01", "type": "精确词", "question": "JARVIS-Office 是什么", "expectDoc": "JARVIS 团队手册", "expectChunkKeywords": ["WiFi"], "expectAnswerKeywords": ["JARVIS-Office"]},
-  {"id": "hb-para-02", "type": "同义改写", "question": "出差吃饭一天补多少钱", "expectDoc": "JARVIS 团队手册", "expectChunkKeywords": ["餐补"], "expectAnswerKeywords": ["140"]},
-  {"id": "hb-para-03", "type": "同义改写", "question": "伙食补助标准是什么", "expectDoc": "JARVIS 团队手册", "expectChunkKeywords": ["餐补"]},
-  {"id": "hb-exact-04", "type": "精确词", "question": "WiFi 密码在哪里看", "expectDoc": "JARVIS 团队手册", "expectChunkKeywords": ["内网公告"], "expectAnswerKeywords": ["内网公告"]},
-  {"id": "hb-num-05", "type": "表格数字", "question": "午餐报销多少钱", "expectDoc": "JARVIS 团队手册", "expectChunkKeywords": ["50"], "expectAnswerKeywords": ["50"]},
-  {"id": "hb-num-06", "type": "表格数字", "question": "报销超过多少钱需要总监审批", "expectDoc": "JARVIS 团队手册", "expectChunkKeywords": ["5000"], "expectAnswerKeywords": ["5000"]},
-  {"id": "hb-mix-07", "type": "组合", "question": "出差报销的提交期限是多久", "expectDoc": "JARVIS 团队手册", "expectChunkKeywords": ["10 个工作日"], "expectAnswerKeywords": ["10"]},
-  {"id": "hb-para-08", "type": "同义改写", "question": "公司无线网叫什么名字", "expectDoc": "JARVIS 团队手册", "expectChunkKeywords": ["JARVIS-Office"], "expectAnswerKeywords": ["JARVIS-Office"]},
-
-  {"id": "rs-exact-09", "type": "精确词", "question": "贾志远在阿里云做什么", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["MSE"]},
-  {"id": "rs-para-10", "type": "同义改写", "question": "他用过哪些消息队列", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["RocketMQ"]},
-  {"id": "rs-exact-11", "type": "精确词", "question": "EasyBI 是什么项目", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["EasyBI"]},
-  {"id": "rs-exact-12", "type": "精确词", "question": "CyberLoRA 的相似度评测用什么模型", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["ArcFace"], "expectAnswerKeywords": ["ArcFace"]},
-  {"id": "rs-mix-13", "type": "组合", "question": "贾志远会哪些 AI 应用开发技能", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["RAG"]},
-  {"id": "rs-para-14", "type": "同义改写", "question": "求职者的学历背景怎么样", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["武汉纺织大学"], "expectAnswerKeywords": ["武汉纺织大学"]},
-  {"id": "rs-exact-15", "type": "精确词", "question": "AgentMate 平台是干什么的", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["智能体平台"]},
-  {"id": "rs-exact-16", "type": "精确词", "question": "AutoDev 流水线分哪几个阶段", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["Spec"], "expectAnswerKeywords": ["Spec"]},
-  {"id": "rs-mix-17", "type": "组合", "question": "贾志远深入阅读过哪些源码", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["AQS"]},
-  {"id": "rs-para-18", "type": "同义改写", "question": "候选人期望的薪资是多少", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["面议"]},
-  {"id": "rs-exact-19", "type": "精确词", "question": "EasyBI 图表加载慢是怎么优化的", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["Caffeine"]},
-  {"id": "rs-num-20", "type": "表格数字", "question": "图表渲染效率提升了多少", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["300%"], "expectAnswerKeywords": ["300%"]},
-  {"id": "rs-exact-21", "type": "精确词", "question": "CyberLoRA 用什么显卡训练", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["T4"], "expectAnswerKeywords": ["T4"]},
-  {"id": "rs-mix-22", "type": "组合", "question": "贾志远的英语水平如何", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["CET"], "expectAnswerKeywords": ["CET"]},
-  {"id": "rs-exact-23", "type": "精确词", "question": "APASS 日志模块用了什么存储", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["ElasticSearch"]},
-  {"id": "rs-para-24", "type": "同义改写", "question": "这个人擅长什么编程语言", "expectDoc": "贾志远的简历", "expectChunkKeywords": ["Java"]},
-
-  {"id": "wk-para-25", "type": "同义改写", "question": "Wiki 的三个死循环是什么", "expectDoc": "LLM Wiki 技术调研", "expectChunkKeywords": ["没人写"], "expectAnswerKeywords": ["没人写"]},
-  {"id": "wk-exact-26", "type": "精确词", "question": "DeepWiki 是哪家公司做的", "expectDoc": "LLM Wiki 技术调研", "expectChunkKeywords": ["Cognition"]},
-  {"id": "wk-para-27", "type": "同义改写", "question": "怎么解决文档过期的问题", "expectDoc": "LLM Wiki 技术调研", "expectChunkKeywords": ["过期检测"]},
-  {"id": "wk-mix-28", "type": "组合", "question": "三条路线的落地顺序是什么", "expectDoc": "LLM Wiki 技术调研", "expectChunkKeywords": ["见效"]},
-  {"id": "wk-exact-29", "type": "精确词", "question": "向量粗排之后用什么重排", "expectDoc": "LLM Wiki 技术调研", "expectChunkKeywords": ["Cross-Encoder"]},
-  {"id": "wk-mix-30", "type": "组合", "question": "为什么检索路线要先做", "expectDoc": "LLM Wiki 技术调研", "expectChunkKeywords": ["见效"]},
-  {"id": "wk-exact-31", "type": "精确词", "question": "DeepWiki-Open 适合什么场景", "expectDoc": "LLM Wiki 技术调研", "expectChunkKeywords": ["私有化"]},
-  {"id": "wk-mix-32", "type": "组合", "question": "LLM Wiki 的本质是什么", "expectDoc": "LLM Wiki 技术调研", "expectChunkKeywords": ["团队记忆"]},
-
-  {"id": "irr-01", "type": "无关", "question": "今天天气怎么样", "irrelevant": true},
-  {"id": "irr-02", "type": "无关", "question": "帮我写一首关于秋天的诗", "irrelevant": true},
-  {"id": "irr-03", "type": "无关", "question": "周杰伦的最新专辑是什么", "irrelevant": true},
-  {"id": "irr-04", "type": "无关", "question": "苹果公司的股价现在多少", "irrelevant": true},
-  {"id": "irr-05", "type": "无关", "question": "红烧肉怎么做才好吃", "irrelevant": true},
-  {"id": "irr-06", "type": "无关", "question": "明天星期几", "irrelevant": true},
-  {"id": "irr-07", "type": "无关", "question": "推荐一部好看的科幻电影", "irrelevant": true},
-  {"id": "irr-08", "type": "无关", "question": "1 加 1 等于几", "irrelevant": true},
-
-  {"id": "tool-01", "type": "工具意图", "question": "帮我列出所有任务", "irrelevant": true},
-  {"id": "tool-02", "type": "工具意图", "question": "帮我创建一个新任务，标题是准备周报", "irrelevant": true},
-  {"id": "tool-03", "type": "工具意图", "question": "把已取消的任务都清理掉", "irrelevant": true},
-  {"id": "tool-04", "type": "工具意图", "question": "任务 T-3 的负责人改成我", "irrelevant": true}
+  {
+    "id": "hb-exact-01",
+    "type": "精确词",
+    "question": "JARVIS-Office 是什么",
+    "expectDoc": "JARVIS 团队手册",
+    "expectChunkKeywords": [
+      "WiFi"
+    ],
+    "expectAnswerKeywords": [
+      "JARVIS-Office"
+    ]
+  },
+  {
+    "id": "hb-para-02",
+    "type": "同义改写",
+    "question": "出差吃饭一天补多少钱",
+    "expectDoc": "JARVIS 团队手册",
+    "expectChunkKeywords": [
+      "餐补"
+    ],
+    "expectAnswerKeywords": [
+      "140"
+    ]
+  },
+  {
+    "id": "hb-para-03",
+    "type": "同义改写",
+    "question": "伙食补助标准是什么",
+    "expectDoc": "JARVIS 团队手册",
+    "expectChunkKeywords": [
+      "餐补"
+    ]
+  },
+  {
+    "id": "hb-exact-04",
+    "type": "精确词",
+    "question": "WiFi 密码在哪里看",
+    "expectDoc": "JARVIS 团队手册",
+    "expectChunkKeywords": [
+      "内网公告"
+    ],
+    "expectAnswerKeywords": [
+      "内网公告"
+    ]
+  },
+  {
+    "id": "hb-num-05",
+    "type": "表格数字",
+    "question": "午餐报销多少钱",
+    "expectDoc": "JARVIS 团队手册",
+    "expectChunkKeywords": [
+      "50"
+    ],
+    "expectAnswerKeywords": [
+      "50"
+    ]
+  },
+  {
+    "id": "hb-num-06",
+    "type": "表格数字",
+    "question": "报销超过多少钱需要总监审批",
+    "expectDoc": "JARVIS 团队手册",
+    "expectChunkKeywords": [
+      "5000"
+    ],
+    "expectAnswerKeywords": [
+      "5000"
+    ]
+  },
+  {
+    "id": "hb-mix-07",
+    "type": "组合",
+    "question": "出差报销的提交期限是多久",
+    "expectDoc": "JARVIS 团队手册",
+    "expectChunkKeywords": [
+      "10 个工作日"
+    ],
+    "expectAnswerKeywords": [
+      "10"
+    ]
+  },
+  {
+    "id": "hb-para-08",
+    "type": "同义改写",
+    "question": "公司无线网叫什么名字",
+    "expectDoc": "JARVIS 团队手册",
+    "expectChunkKeywords": [
+      "JARVIS-Office"
+    ],
+    "expectAnswerKeywords": [
+      "JARVIS-Office"
+    ]
+  },
+  {
+    "id": "rs-exact-09",
+    "type": "精确词",
+    "question": "贾志远在阿里云做什么",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "MSE"
+    ]
+  },
+  {
+    "id": "rs-para-10",
+    "type": "同义改写",
+    "question": "他用过哪些消息队列",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "RocketMQ"
+    ]
+  },
+  {
+    "id": "rs-exact-11",
+    "type": "精确词",
+    "question": "EasyBI 是什么项目",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "EasyBI"
+    ]
+  },
+  {
+    "id": "rs-exact-12",
+    "type": "精确词",
+    "question": "CyberLoRA 的相似度评测用什么模型",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "ArcFace"
+    ],
+    "expectAnswerKeywords": [
+      "ArcFace"
+    ]
+  },
+  {
+    "id": "rs-mix-13",
+    "type": "组合",
+    "question": "贾志远会哪些 AI 应用开发技能",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "RAG"
+    ]
+  },
+  {
+    "id": "rs-para-14",
+    "type": "同义改写",
+    "question": "求职者的学历背景怎么样",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "武汉纺织大学"
+    ],
+    "expectAnswerKeywords": [
+      "武汉纺织大学"
+    ]
+  },
+  {
+    "id": "rs-exact-15",
+    "type": "精确词",
+    "question": "AgentMate 平台是干什么的",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "智能体平台"
+    ]
+  },
+  {
+    "id": "rs-exact-16",
+    "type": "精确词",
+    "question": "AutoDev 流水线分哪几个阶段",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "Spec"
+    ],
+    "expectAnswerKeywords": [
+      "Spec"
+    ]
+  },
+  {
+    "id": "rs-mix-17",
+    "type": "组合",
+    "question": "贾志远深入阅读过哪些源码",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "AQS"
+    ]
+  },
+  {
+    "id": "rs-para-18",
+    "type": "同义改写",
+    "question": "候选人期望的薪资是多少",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "面议"
+    ]
+  },
+  {
+    "id": "rs-exact-19",
+    "type": "精确词",
+    "question": "EasyBI 图表加载慢是怎么优化的",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "Caffeine"
+    ]
+  },
+  {
+    "id": "rs-num-20",
+    "type": "表格数字",
+    "question": "图表渲染效率提升了多少",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "300%"
+    ],
+    "expectAnswerKeywords": [
+      "300%"
+    ]
+  },
+  {
+    "id": "rs-exact-21",
+    "type": "精确词",
+    "question": "CyberLoRA 用什么显卡训练",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "T4"
+    ],
+    "expectAnswerKeywords": [
+      "T4"
+    ]
+  },
+  {
+    "id": "rs-mix-22",
+    "type": "组合",
+    "question": "贾志远的英语水平如何",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "CET"
+    ],
+    "expectAnswerKeywords": [
+      "CET"
+    ]
+  },
+  {
+    "id": "rs-exact-23",
+    "type": "精确词",
+    "question": "APASS 日志模块用了什么存储",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "ElasticSearch"
+    ]
+  },
+  {
+    "id": "rs-para-24",
+    "type": "同义改写",
+    "question": "这个人擅长什么编程语言",
+    "expectDoc": "贾志远的简历",
+    "expectChunkKeywords": [
+      "Java"
+    ]
+  },
+  {
+    "id": "wk-para-25",
+    "type": "同义改写",
+    "question": "Wiki 的三个死循环是什么",
+    "expectDoc": "LLM Wiki 技术调研",
+    "expectChunkKeywords": [
+      "没人写"
+    ],
+    "expectAnswerKeywords": [
+      "没人写"
+    ]
+  },
+  {
+    "id": "wk-exact-26",
+    "type": "精确词",
+    "question": "DeepWiki 是哪家公司做的",
+    "expectDoc": "LLM Wiki 技术调研",
+    "expectChunkKeywords": [
+      "Cognition"
+    ]
+  },
+  {
+    "id": "wk-para-27",
+    "type": "同义改写",
+    "question": "怎么解决文档过期的问题",
+    "expectDoc": "LLM Wiki 技术调研",
+    "expectChunkKeywords": [
+      "过期检测"
+    ]
+  },
+  {
+    "id": "wk-mix-28",
+    "type": "组合",
+    "question": "三条路线的落地顺序是什么",
+    "expectDoc": "LLM Wiki 技术调研",
+    "expectChunkKeywords": [
+      "见效"
+    ]
+  },
+  {
+    "id": "wk-exact-29",
+    "type": "精确词",
+    "question": "向量粗排之后用什么重排",
+    "expectDoc": "LLM Wiki 技术调研",
+    "expectChunkKeywords": [
+      "Cross-Encoder"
+    ]
+  },
+  {
+    "id": "wk-mix-30",
+    "type": "组合",
+    "question": "为什么检索路线要先做",
+    "expectDoc": "LLM Wiki 技术调研",
+    "expectChunkKeywords": [
+      "见效"
+    ]
+  },
+  {
+    "id": "wk-exact-31",
+    "type": "精确词",
+    "question": "DeepWiki-Open 适合什么场景",
+    "expectDoc": "LLM Wiki 技术调研",
+    "expectChunkKeywords": [
+      "私有化"
+    ]
+  },
+  {
+    "id": "wk-mix-32",
+    "type": "组合",
+    "question": "LLM Wiki 的本质是什么",
+    "expectDoc": "LLM Wiki 技术调研",
+    "expectChunkKeywords": [
+      "团队记忆"
+    ]
+  },
+  {
+    "id": "irr-01",
+    "type": "无关",
+    "question": "今天天气怎么样",
+    "irrelevant": true
+  },
+  {
+    "id": "irr-02",
+    "type": "无关",
+    "question": "帮我写一首关于秋天的诗",
+    "irrelevant": true
+  },
+  {
+    "id": "irr-03",
+    "type": "无关",
+    "question": "周杰伦的最新专辑是什么",
+    "irrelevant": true
+  },
+  {
+    "id": "irr-04",
+    "type": "无关",
+    "question": "苹果公司的股价现在多少",
+    "irrelevant": true
+  },
+  {
+    "id": "irr-05",
+    "type": "无关",
+    "question": "红烧肉怎么做才好吃",
+    "irrelevant": true
+  },
+  {
+    "id": "irr-06",
+    "type": "无关",
+    "question": "明天星期几",
+    "irrelevant": true
+  },
+  {
+    "id": "irr-07",
+    "type": "无关",
+    "question": "推荐一部好看的科幻电影",
+    "irrelevant": true
+  },
+  {
+    "id": "irr-08",
+    "type": "无关",
+    "question": "1 加 1 等于几",
+    "irrelevant": true
+  },
+  {
+    "id": "tool-01",
+    "type": "工具意图",
+    "question": "帮我列出所有任务",
+    "irrelevant": true
+  },
+  {
+    "id": "tool-02",
+    "type": "工具意图",
+    "question": "帮我创建一个新任务，标题是准备周报",
+    "irrelevant": true
+  },
+  {
+    "id": "tool-03",
+    "type": "工具意图",
+    "question": "把已取消的任务都清理掉",
+    "irrelevant": true
+  },
+  {
+    "id": "tool-04",
+    "type": "工具意图",
+    "question": "任务 T-3 的负责人改成我",
+    "irrelevant": true
+  }
 ]

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Card, Drawer, Input, Space, Spin, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Drawer, Input, Modal, Space, Spin, Tag, Typography, message } from 'antd'
 import { ClearOutlined, FileTextOutlined, LoadingOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { knowledgeApi, streamChat } from '../api/client'
+import { evalApi, knowledgeApi, streamChat } from '../api/client'
 import { BRAND, CLAY, CLAY_SHADOW } from '../theme'
 
 const { TextArea } = Input
@@ -32,6 +32,9 @@ export default function Chat() {
   const [viewingDoc, setViewingDoc] = useState(null) // { id, title }
   const [docContent, setDocContent] = useState('')
   const [docLoading, setDocLoading] = useState(false)
+  const [dislike, setDislike] = useState(null) // { question, answer } 👎 提交候选池
+  const [dislikeNote, setDislikeNote] = useState('')
+  const [dislikeSubmitting, setDislikeSubmitting] = useState(false)
   const abortRef = useRef(null)
   const bottomRef = useRef(null)
   const listRef = useRef(null)
@@ -123,6 +126,27 @@ export default function Chat() {
     stop()
     setMessages([])
     setError('')
+  }
+
+  /** 👎 提交候选池：问题 + 备注 + 回答摘要，评测中心 triage 后转正进标注集 */
+  const submitDislike = async () => {
+    if (!dislike) return
+    setDislikeSubmitting(true)
+    try {
+      await evalApi.submitCandidate({
+        question: dislike.question,
+        note: dislikeNote.trim() || null,
+        source: 'chat',
+        chatRef: dislike.answer.slice(0, 200),
+      })
+      message.success('已提交候选池，可在评测中心转正为评测用例')
+      setDislike(null)
+      setDislikeNote('')
+    } catch (e) {
+      // 409（重复）等信息已由拦截器弹出
+    } finally {
+      setDislikeSubmitting(false)
+    }
   }
 
   return (
@@ -232,6 +256,20 @@ export default function Chat() {
                       <Spin indicator={<LoadingOutlined spin />} size="small" />
                     )}
                     <SourceList sources={msg.sources} onOpenDoc={openSourceDoc} />
+                    {msg.content && !(streaming && i === messages.length - 1) && (
+                      <div style={{ marginTop: 6, textAlign: 'right' }}>
+                        <Button
+                          type="text"
+                          size="small"
+                          onClick={() =>
+                            setDislike({ question: messages[i - 1]?.content || '', answer: msg.content })
+                          }
+                          style={{ color: CLAY.inkSoft, fontWeight: 700, fontSize: 12 }}
+                        >
+                          👎 回答不满意
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ),
@@ -287,6 +325,35 @@ export default function Chat() {
           </Button>
         )}
       </div>
+
+      <Modal
+        title="👎 提交到评测候选池"
+        open={!!dislike}
+        onOk={submitDislike}
+        confirmLoading={dislikeSubmitting}
+        onCancel={() => {
+          setDislike(null)
+          setDislikeNote('')
+        }}
+        okText="提交"
+      >
+        {dislike && (
+          <>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+              问题：{dislike.question}
+            </Typography.Paragraph>
+            <TextArea
+              value={dislikeNote}
+              onChange={(e) => setDislikeNote(e.target.value)}
+              placeholder="哪里不满意？（如：答案错误 / 引用不对 / 没查到知识库）"
+              autoSize={{ minRows: 2, maxRows: 4 }}
+            />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              提交后进入评测中心候选池，triage 转正后成为评测标注用例。
+            </Typography.Text>
+          </>
+        )}
+      </Modal>
 
       <Drawer
         title={

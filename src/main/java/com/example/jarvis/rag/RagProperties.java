@@ -15,6 +15,8 @@ public class RagProperties {
 
 	private final Chunk chunk = new Chunk();
 
+	private final Eval eval = new Eval();
+
 	public Embedding getEmbedding() {
 		return embedding;
 	}
@@ -25,6 +27,25 @@ public class RagProperties {
 
 	public Chunk getChunk() {
 		return chunk;
+	}
+
+	public Eval getEval() {
+		return eval;
+	}
+
+	/** 评测相关（归档目录由后端只读 API 暴露给前端评测中心）。 */
+	public static class Eval {
+
+		/** 评测归档目录（相对后端工作目录；容器形态需挂载持久化） */
+		private String historyDir = "docs/eval/history";
+
+		public String getHistoryDir() {
+			return historyDir;
+		}
+
+		public void setHistoryDir(String historyDir) {
+			this.historyDir = historyDir;
+		}
 	}
 
 	public static class Embedding {

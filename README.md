@@ -10,8 +10,9 @@
   - 本地 Ollama（默认 bge-m3，1024 维）段落感知分块 + 向量化
   - H2 knowledge_document / knowledge_chunk 持久化
   - 内存 cosine Top-K 相似度检索
-  - **双入口**：对话前自动 prompt 注入 + `knowledgeSearch` Agent 工具
-- 🖥️ **管理后台**：仪表盘 / AI 对话（SSE 流式）/ 任务 / 智能体 / 知识库（前端上传 .md/.txt）
+  - **双入口**：对话前自动 prompt 注入（带 [n] 引用与来源卡片）+ `knowledgeSearch` Agent 工具
+- 📊 **RAG 评测系统**：40 条标注集回归 + 历史归档与趋势 diff + pre-push/CI 触发 + 候选池流水线（Chat 👎 → 转正进标注集）+ 前端评测中心（`/eval`）
+- 🖥️ **管理后台**：仪表盘 / AI 对话（SSE 流式）/ 任务 / 智能体 / 知识库（前端上传 .md/.txt）/ 评测中心
 - 🐳 **一键 Docker Compose**：前后端 + Ollama，自动拉 bge-m3、named volume 持久化
 
 ## 快速开始
@@ -40,8 +41,8 @@ open http://localhost:8080      # 访问前端
 
 | 文档 | 说明 |
 |---|---|
-| [docs/setup-guide.md](docs/setup-guide.md) | **完整启动与配置指南**（环境 → MySQL → Ollama & bge-m3 详解 → 启动 → RAG 使用 → Docker 部署）|
-| [docs/rag-design.md](docs/rag-design.md) | **RAG 设计文档**（工作流程与原理 → 缺点 → Phase 1~3 演进路线）|
+| [docs/setup-guide.md](docs/setup-guide.md) | **完整启动与配置指南**（环境 → MySQL → Ollama & bge-m3 详解 → 启动 → RAG 使用 → 评测系统 → Docker 部署）|
+| [docs/rag-design.md](docs/rag-design.md) | **RAG 设计文档**（工作流程与原理 → 缺点 → Phase 1~3 演进路线 → 评测基线与归档）|
 | [docs/llm-wiki-research.md](docs/llm-wiki-research.md) | LLM Wiki / 知识编译技术调研（M1~M3 选型）|
 | [docs/java-dsh-design.md](docs/java-dsh-design.md) | JARVIS = DeepSeek Harness（DSH）Java 版 架构设计稿（M1~M5）|
 

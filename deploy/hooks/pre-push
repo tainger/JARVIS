@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# git pre-push 钩子：敏感路径被改动时，push 前强制跑检索层评测，跑分回退即拒绝。
+#
+# 触发路径（与 .github/workflows/eval.yml 的 paths 保持一致）：
+#   src/main/java/com/example/jarvis/rag/**
+#   src/test/java/com/example/jarvis/eval/** 与 RagEvalTest
+#   src/test/resources/rag-eval-cases.json
+#   src/main/resources/application.properties
+#   src/main/resources/schema.sql
+#
+# fail-open：Ollama 不可达时仅警告放行（本机未开 Ollama 不应卡住 push）。
+# 逃生通道：git push --no-verify
+set -uo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT_DIR"
+
+# ---------- 收集本次 push 的变更文件 ----------
+# stdin 每行：<local_ref> <local_sha> <remote_ref> <remote_sha>
+zero="0000000000000000000000000000000000000000"
+mapfile -t lines
+CHANGED=""
+for line in "${lines[@]}"; do
+  [ -z "$line" ] && continue
+  read -r _ local_sha _ remote_sha <<<"$line"
+  # 分支删除：跳过
+  [ "$local_sha" = "$zero" ] && continue
+  if [ "$remote_sha" = "$zero" ]; then
+    # 新分支：无远端基线，取与 HEAD 的最近共同祖先起算（保守覆盖整个分支）
+    base=$(git merge-base HEAD "$local_sha" 2>/dev/null || echo "$local_sha~1")
+  else
+    base="$remote_sha"
+  fi
+  files=$(git diff --name-only "$base..$local_sha" 2>/dev/null || true)
+  CHANGED="$CHANGED
+$files"
+done
+
+# ---------- 路径过滤 ----------
+SENSITIVE='(^src/main/java/com/example/jarvis/rag/)|(^src/test/java/com/example/jarvis/eval/)|(^src/test/java/com/example/jarvis/rag/RagEvalTest\.java$)|(^src/test/resources/rag-eval-cases\.json$)|(^src/main/resources/application\.properties$)|(^src/main/resources/schema\.sql$)'
+hits=$(printf '%s\n' "$CHANGED" | grep -Ev '^\s*$' | sort -u | grep -E "$SENSITIVE" || true)
+
+if [ -z "$hits" ]; then
+  exit 0
+fi
+
+echo "🔎 检测到检索内核改动，push 前先跑评测："
+printf '    %s\n' $hits
+
+# ---------- fail-open：Ollama 不可达放行 ----------
+if ! curl -s --noproxy '*' -m 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+  echo "⚠️  Ollama 不可达，跳过评测直接放行（fail-open）"
+  exit 0
+fi
+
+# ---------- 跑检索层评测 ----------
+export RAG_EVAL=true
+if ! ./mvnw -q test -Dtest=RagEvalTest#evalRetrieval; then
+  echo
+  echo "❌ RAG 评测未达标，已拒绝 push。最近一次指标："
+  report="target/rag-eval-report.md"
+  [ -f "$report" ] && grep -A 8 "^## 总体指标" "$report"
+  echo
+  echo "   若确需跳过：git push --no-verify"
+  exit 1
+fi
+
+echo "✅ 评测达标，放行 push"

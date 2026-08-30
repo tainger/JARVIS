@@ -31,6 +31,16 @@ public class GlobalExceptionHandler {
 		));
 	}
 
+	/** 状态冲突（重复 triage 等）→ 409 */
+	@ExceptionHandler(IllegalStateException.class)
+	public ResponseEntity<Map<String, Object>> handleIllegalState(IllegalStateException e) {
+		log.warn("State conflict: {}", e.getMessage());
+		return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+				"error", "状态冲突",
+				"detail", e.getMessage()
+		));
+	}
+
 	// ======================================================================
 	// 2. Spring Security 异常
 	// ======================================================================

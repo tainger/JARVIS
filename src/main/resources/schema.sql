@@ -48,3 +48,20 @@ CREATE TABLE IF NOT EXISTS knowledge_chunk (
     KEY idx_knowledge_chunk_doc (document_id, seq),
     CONSTRAINT fk_chunk_document FOREIGN KEY (document_id) REFERENCES knowledge_document (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------- RAG 评测候选池 ----------
+
+CREATE TABLE IF NOT EXISTS eval_candidate (
+    id            BIGINT       AUTO_INCREMENT PRIMARY KEY,
+    question      VARCHAR(512) NOT NULL COMMENT '原始问题（Chat 👎 或手动提交）',
+    question_norm VARCHAR(512) NOT NULL COMMENT '规范化问题，pending 查重用',
+    note          VARCHAR(512)          COMMENT '用户备注',
+    expected_doc  VARCHAR(255)          COMMENT '预期命中文档（转正时补全）',
+    source        VARCHAR(32)  NOT NULL DEFAULT 'chat' COMMENT 'chat / manual',
+    chat_ref      VARCHAR(512)          COMMENT '聊天上下文引用（回答摘要）',
+    status        VARCHAR(16)  NOT NULL DEFAULT 'pending' COMMENT 'pending / promoted / discarded',
+    created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    triaged_at    TIMESTAMP    NULL,
+    KEY idx_eval_candidate_status (status, created_at),
+    KEY idx_eval_candidate_norm (question_norm)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='RAG 评测候选池';

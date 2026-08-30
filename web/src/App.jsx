@@ -8,6 +8,7 @@ import Tasks from './pages/Tasks'
 import Users from './pages/Users'
 import Agents from './pages/Agents'
 import Knowledge from './pages/Knowledge'
+import EvalCenter from './pages/EvalCenter'
 import { authStore, authApi } from './api/client'
 
 /**
@@ -85,6 +86,7 @@ export default function App() {
         <Route path="users" element={<Users />} />
         <Route path="agents" element={<Agents />} />
         <Route path="knowledge" element={<Knowledge />} />
+        <Route path="eval" element={<EvalCenter />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

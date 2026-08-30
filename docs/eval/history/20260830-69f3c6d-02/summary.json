@@ -1,0 +1,29 @@
+{
+  "suite" : "retrieval",
+  "runId" : "20260830-69f3c6d-02",
+  "timestamp" : "2026-08-30T06:13:22.274591Z",
+  "gitCommit" : "69f3c6d63a8db827cf54eae371f7d0a9d0bcadca",
+  "caseCounts" : {
+    "irrelevant" : 12,
+    "relevant" : 32
+  },
+  "metrics" : {
+    "recallAt4" : 1.0,
+    "mrr" : 0.8385416666666666,
+    "separation" : 0.2078634801448968,
+    "wrongInjectRate" : 0.0,
+    "injectRecall" : 0.8125
+  },
+  "latency" : { },
+  "config" : {
+    "vectorWeight" : 0.75,
+    "lexicalWeight" : 0.25,
+    "topK" : 4,
+    "minScore" : 0.4,
+    "injectScore" : 0.5,
+    "chunkMaxChars" : 500,
+    "chunkHardLimit" : 800,
+    "chunkOverlapChars" : 80,
+    "embeddingModel" : "bge-m3"
+  }
+}

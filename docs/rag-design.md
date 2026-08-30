@@ -107,9 +107,11 @@ embedding 对**长文本会发生语义稀释**（一段 2000 字混了三个主
 | 2 | **强制引用** | 缺点3 | prompt 要求标注 `[n]`，前端渲染可点开的来源片段 |
 | 3 | **词面升级 BM25** | 缺点1 | 引入 Lucene 内存索引替代 bigram，IDF 加权；混合权重 0.75/0.25 可再用评估集调 |
 | 4 | 嵌入缓存 | 缺点8 | 文档内容 hash 相同的块跳过重嵌入 |
-| 5 | 评估集 | 缺点7 | ✅ **已落地**（[RagEvalTest](../src/test/java/com/example/jarvis/rag/RagEvalTest.java) + 40 条标注集）。检索层：`RAG_EVAL=true ./mvnw test -Dtest=RagEvalTest`（零 token，需 Ollama）；生成层：`RAG_EVAL=true RAG_EVAL_LLM=true ... -Dtest=RagEvalTest#evalGeneration`（走真实链路，需后端运行）。报告写入 `target/rag-eval-report*.md`，指标不达基线即测试失败 |
+| 5 | 评估集 | 缺点7 | ✅ **已落地，并升级为完整评测系统**（标注集 40 条 + [RagEvalTest](../src/test/java/com/example/jarvis/rag/RagEvalTest.java) 薄壳 + [openspec/add-rag-eval-system](../openspec/changes/add-rag-eval-system/proposal.md)）。能力：① 归档与趋势（`docs/eval/history/<runId>/` 存 summary.json + report.md，报告自动 diff 上次）② 触发机制（`./run-eval.sh` 一键、pre-push 钩子按改动路径拦截、GitHub Actions）③ 候选池流水线（Chat 👎 入池 → 评测中心转正进标注集）④ 指标深度（LLM-as-judge 忠实度、时延 p50/p95、分类型/分文档分层）⑤ 评测中心（前端 `/eval`：指标卡、趋势图、用例明细、候选池 triage）。检索层：`RAG_EVAL=true ./mvnw test -Dtest=RagEvalTest`（零 token，需 Ollama）；生成层：`RAG_EVAL=true RAG_EVAL_LLM=true ... -Dtest=RagEvalTest#evalGeneration`（走真实链路 + DeepSeek judge） |
 
 ### 首份基线（2026-08-30，标注集 32 相关 + 12 无关/工具意图）
+
+> 历史归档与全部后续运行见 `docs/eval/history/`（summary.json 可程序化回读，前端评测中心即读它）。
 
 | 指标 | 值 | 基线 | 结果 |
 |---|---|---|---|

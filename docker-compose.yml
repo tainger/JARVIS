@@ -122,12 +122,16 @@ services:
       - MYSQL_URL=jdbc:mysql://mysql:3306/jarvis?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
       - MYSQL_USERNAME=jarvis
       - MYSQL_PASSWORD=${MYSQL_PASSWORD:-jarvis123}
+      # --- RAG 评测归档目录（评测中心历史 API 的数据源）---
+      - RAG_EVAL_HISTORY_DIR=${RAG_EVAL_HISTORY_DIR:-docs/eval/history}
       # --- JVM ---
       - JAVA_OPTS=-Xms256m -Xmx${BACKEND_MAX_MEM_MB:-1024}m
     ports:
       - "${JARVIS_BACKEND_PORT:-18080}:8080"
     volumes:
       - backend_logs:/app/log
+      # 评测归档（summary.json/report.md）：容器重建不丢，评测中心才能看历史趋势
+      - eval_history:/app/docs/eval/history
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/knowledge/stats"]
       interval: 30s
@@ -179,3 +183,4 @@ volumes:
   ollama_webui_data:  # WebUI 用户/会话
   backend_logs:       # jarvis-info.log 等
   mysql_data:         # MySQL 数据文件（task + 知识库）
+  eval_history:       # RAG 评测历史归档（docs/eval/history）

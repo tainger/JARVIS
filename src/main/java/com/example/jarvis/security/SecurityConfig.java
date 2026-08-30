@@ -89,6 +89,13 @@ public class SecurityConfig {
 						// ===== 其他全部需要认证 =====
 						.anyRequest().authenticated()
 				)
+				// 未认证（无 token）统一返回 401 JSON，而不是默认 403
+				.exceptionHandling(ex -> ex.authenticationEntryPoint((request, response, authException) -> {
+					response.setStatus(401);
+					response.setContentType("application/json;charset=UTF-8");
+					response.getWriter().write(
+							"{\"error\":\"未登录或登录已过期\",\"detail\":\"请重新登录\"}");
+				}))
 				// H2 控制台用了 X-Frame-Options: DENY 会导致 iframe 打不开，开发时允许
 				.headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
 				// 把 JWT 过滤器加到 UsernamePasswordAuthenticationFilter 之前

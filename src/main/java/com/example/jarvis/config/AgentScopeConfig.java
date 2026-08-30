@@ -228,6 +228,50 @@ public class AgentScopeConfig {
 
 	@Bean
 	public OpenAIChatModel agentscopeModel() {
+		// ===== 占位符 Key 检查（启动时立刻提醒，避免用户点了对话才看到 401）=====
+		String key = model.getApiKey();
+		boolean isPlaceholder =
+				key == null
+				|| key.isEmpty()
+				|| key.contains("sk-demo-key")
+				|| key.contains("sk-your-real")
+				|| key.startsWith("your-")
+				|| key.contains("placeholder");
+
+		if (isPlaceholder) {
+			log.warn("""
+					\n
+					╔══════════════════════════════════════════════════════════════════╗
+					║ ⚠️  AGENTSCOPE_API_KEY 仍是占位符，AI 对话功能将不可用！          ║
+					╠══════════════════════════════════════════════════════════════════╣
+					║                                                                  ║
+					║   当前生效值: {}               ║
+					║                                                                  ║
+					║   本地开发修复方式（任选其一）：                                   ║
+					║    1) 复制 .env.example → .env，填真实 Key：                     ║
+					║         cp .env.example .env && vim .env                         ║
+					║         → 修改 AGENTSCOPE_API_KEY=sk-xxx                         ║
+					║         → 然后通过 ./run.sh 启动（自动加载 .env）                 ║
+					║                                                                  ║
+					║    2) 直接在当前终端 export 后再启动：                            ║
+					║         export AGENTSCOPE_API_KEY=sk-xxx                         ║
+					║         ./mvnw spring-boot:run                                   ║
+					║                                                                  ║
+					║    3) IDE（IntelliJ IDEA）：Run → Edit Configurations →        ║
+					║       Modify options → Environment variables → 手动加键值对。   ║
+					║                                                                  ║
+					║   获取 Key：https://platform.deepseek.com/                        ║
+					║                                                                  ║
+					╚══════════════════════════════════════════════════════════════════╝
+					""".formatted(key == null ? "<null>" : key.length() > 40
+							? key.substring(0, 40) + "...(截断)"
+							: key));
+		} else {
+			log.info("AGENTSCOPE_MODEL: {} @ {}（api-key 已配置，长度={}）",
+					model.getName(), model.getBaseUrl(),
+					key == null ? 0 : key.length());
+		}
+
 		return OpenAIChatModel.builder()
 				.apiKey(model.getApiKey())
 				.baseUrl(model.getBaseUrl())

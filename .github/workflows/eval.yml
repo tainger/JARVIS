@@ -1,0 +1,75 @@
+# RAG 评测 CI（对应 openspec add-rag-eval-system 任务3.3）。
+# 触发路径与 deploy/hooks/pre-push 的敏感路径集保持一致；只跑检索层（零 token），
+# 归档 docs/eval/history/ 上传为 artifact 供趋势回查。
+name: rag-eval
+
+on:
+  push:
+    paths:
+      - 'src/main/java/com/example/jarvis/rag/**'
+      - 'src/test/java/com/example/jarvis/eval/**'
+      - 'src/test/java/com/example/jarvis/rag/RagEvalTest.java'
+      - 'src/test/resources/rag-eval-cases.json'
+      - 'src/main/resources/application.properties'
+      - 'src/main/resources/schema.sql'
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:9.2
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: jarvis
+          MYSQL_USER: jarvis
+          MYSQL_PASSWORD: jarvis123
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # Ollama 装在 runner 上（非 service 容器），模型落 ~/.ollama 才能被 actions/cache 缓存
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+
+      - name: Cache bge-m3
+        uses: actions/cache@v4
+        with:
+          path: ~/.ollama
+          key: ollama-bge-m3
+
+      - name: Pull embedding model
+        run: ollama pull bge-m3
+
+      - name: Start Ollama
+        run: |
+          ollama serve > /tmp/ollama-serve.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -s http://127.0.0.1:11434/api/tags >/dev/null && break
+            sleep 1
+          done
+
+      # schema 由 Spring Boot 启动时自动应用（schema.sql 幂等 + Flyway），无需手工建表
+      - name: Run retrieval eval
+        run: RAG_EVAL=true ./mvnw test -Dtest=RagEvalTest#evalRetrieval
+
+      - name: Upload eval archive
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-eval-history
+          path: docs/eval/history/
+          retention-days: 90
