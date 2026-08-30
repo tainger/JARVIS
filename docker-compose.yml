@@ -1,5 +1,5 @@
 # ================================================================
-# JARVIS 一键部署：后端 + 前端 + Ollama（向量模型 bge-m3）
+# JARVIS 一键部署：MySQL + 后端 + 前端 + Ollama（向量模型 bge-m3）
 #
 # 端口占用（可在 .env 修改）：
 #   - 前端 Nginx         JARVIS_FRONTEND_PORT=8080
@@ -7,6 +7,7 @@
 #                        一般只经由前端 /api 反代）
 #   - Ollama             OLLAMA_PORT=11434
 #   - Ollama WebUI（可选）OLLAMA_WEBUI_PORT=3000
+#   - MySQL 仅容器网络内部使用，默认不暴露主机端口
 #
 # 使用：
 #   cp deploy/.env.example .env
@@ -67,7 +68,30 @@ services:
     restart: "no"
 
   # ---------------------------------------------------------------
-  # ② 后端 Spring Boot
+  # ② MySQL（业务库：task / knowledge_document / knowledge_chunk）
+  #    数据持久化在 named volume，容器重建不丢；schema 由后端
+  #    启动时的 schema.sql 自动创建（幂等）
+  # ---------------------------------------------------------------
+  mysql:
+    image: mysql:8.4
+    container_name: jarvis-mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-jarvis-root}
+      - MYSQL_DATABASE=jarvis
+      - MYSQL_USER=jarvis
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-jarvis123}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ---------------------------------------------------------------
+  # ③ 后端 Spring Boot
   # ---------------------------------------------------------------
   backend:
     build:
@@ -77,6 +101,8 @@ services:
     container_name: jarvis-backend
     restart: unless-stopped
     depends_on:
+      mysql:
+        condition: service_healthy
       ollama-init:
         condition: service_completed_successfully
     environment:
@@ -92,15 +118,16 @@ services:
       - RAG_EMBEDDING_BASE_URL=http://ollama:11434
       - RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL:-bge-m3}
       - RAG_TOP_K=${RAG_TOP_K:-4}
-      # --- H2 文件库落到挂载卷，跨容器重建持久 ---
-      - DATA_DIR=/app/data
+      # --- MySQL：通过 compose 服务名访问 ---
+      - MYSQL_URL=jdbc:mysql://mysql:3306/jarvis?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+      - MYSQL_USERNAME=jarvis
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-jarvis123}
       # --- JVM ---
       - JAVA_OPTS=-Xms256m -Xmx${BACKEND_MAX_MEM_MB:-1024}m
     ports:
       - "${JARVIS_BACKEND_PORT:-18080}:8080"
     volumes:
       - backend_logs:/app/log
-      - backend_data:/app/data
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/knowledge/stats"]
       interval: 30s
@@ -151,4 +178,4 @@ volumes:
   ollama_data:        # 向量模型 blobs
   ollama_webui_data:  # WebUI 用户/会话
   backend_logs:       # jarvis-info.log 等
-  backend_data:       # 如果将来把 H2 切到文件库就用这里
+  mysql_data:         # MySQL 数据文件（task + 知识库）

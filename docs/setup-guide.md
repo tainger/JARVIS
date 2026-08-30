@@ -146,6 +146,41 @@ export RAG_TOP_K=6                         # 返回更多片段
 
 ## 4. 启动后端
 
+### 4.0 本地 MySQL（业务库）
+
+后端业务数据（task / 知识库）已从 H2 迁移到 **MySQL**，本地开发需要先准备一个 MySQL 8+：
+
+```bash
+# ① 安装（本机已装 9.2.0，跳过）：
+brew install mysql
+
+# ② 启动。推荐 launchd 常驻（开机自启；沙箱受限时在用户自己的终端执行）：
+brew services start mysql
+#    或临时前台跑：
+mysql.server start
+
+# ③ 建库建用户（root 本地空密码，首次执行）
+mysql -uroot -e "
+CREATE DATABASE IF NOT EXISTS jarvis CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'jarvis'@'127.0.0.1' IDENTIFIED BY 'jarvis123';
+CREATE USER IF NOT EXISTS 'jarvis'@'localhost' IDENTIFIED BY 'jarvis123';
+GRANT ALL PRIVILEGES ON jarvis.* TO 'jarvis'@'127.0.0.1';
+GRANT ALL PRIVILEGES ON jarvis.* TO 'jarvis'@'localhost';
+FLUSH PRIVILEGES;"
+
+# ④ 验证
+mysql -h127.0.0.1 -ujarvis -pjarvis123 jarvis -e "SELECT 1"
+```
+
+- 表结构由后端启动时 `schema.sql`（MySQL 方言，幂等建表）自动创建，无需手工执行
+- 连接参数默认 `127.0.0.1:3306/jarvis`，可用环境变量覆盖（见 §4.1）
+- Docker 部署不用装本地 MySQL，compose 自带 `mysql:8.4` 服务（§9）
+
+> **本机当前状态说明**：因 Trae 沙箱限制 launchctl 与 `/usr/local/var` 写入，
+> 本台机器的 mysqld 是以 `--datadir=/tmp/jarvis-mysql-data --skip-log-bin` 前台进程方式运行的。
+> /tmp 数据目录**重启机器会丢**，丢后处理：`mysql.server start`（或重跑上面的 ②③）→ 重新导入
+> `docs/kb-seeds/` 的三篇种子文档即可。用户终端不受沙箱限制，建议改用 `brew services start mysql` 常驻。
+
 ### 4.1 必须注入的环境变量
 
 `sk-demo-key` 是占位符，会导致模型接口 401，**一定要用真实 Key 覆盖**：
@@ -159,6 +194,10 @@ export AGENTSCOPE_MODEL=deepseek-chat
 # export RAG_EMBEDDING_BASE_URL=http://127.0.0.1:11434
 # export RAG_EMBEDDING_MODEL=bge-m3
 # export RAG_TOP_K=4
+# 数据库（默认 127.0.0.1:3306/jarvis + jarvis/jarvis123，本地开发一般不用动）
+# export MYSQL_URL='jdbc:mysql://127.0.0.1:3306/jarvis?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8'
+# export MYSQL_USERNAME=jarvis
+# export MYSQL_PASSWORD=jarvis123
 ```
 
 ### 4.2 编译 & 启动
@@ -188,13 +227,13 @@ Started JarvisApplication in X.XXX seconds
 curl http://localhost:8080/api/knowledge/stats
 # → {"documents":0,"indexedChunks":0,"embeddingModel":"bge-m3"}
 
-# 任务库（校验 H2 + MyBatis）
+# 任务库（校验 MySQL + MyBatis）
 curl http://localhost:8080/api/tasks
 # → [] 或已有任务列表
 
-# H2 控制台（浏览器打开）
-open http://localhost:8080/h2-console
-# JDBC URL: jdbc:h2:mem:jarvisdb    用户: sa    密码: (空)
+# 直连 MySQL 看表（应有三张表）
+mysql -h127.0.0.1 -ujarvis -pjarvis123 jarvis -e "SHOW TABLES"
+# knowledge_chunk  knowledge_document  task
 
 # 知识库快速导入一条（为测试 RAG 效果）
 curl -X POST http://localhost:8080/api/knowledge/documents \
@@ -260,14 +299,14 @@ npm run dev
    ├─ 直接粘贴 Markdown/纯文本；或
    └─ 选择 .md / .txt 文件 → 前端读取成文本后可二次编辑
    ↓
-③ 后端分块（段落感知合并，目标 800 字符，硬切 1200 字符）
+③ 后端清洗（剥离 HTML）→ 标题感知分块（面包屑前缀 + 目标 500 字符、硬切 800、相邻块重叠 80）
    ↓
-④ 批量调 Ollama bge-m3 向量化（每块 → 1024 维 float[] → JSON 存 H2 knowledge_chunk）
+④ 分批调 Ollama bge-m3 向量化（每批 4 条 → 1024 维 float[] → JSON 存 H2 knowledge_chunk）
    ↓
 ⑤ 内存索引写时复制刷新
    ↓
 ⑥ 使用：
-   ├─ 方式 A（自动）：聊天页面问问题，后端先查 Top-K 命中 → 拼进 prompt
+   ├─ 方式 A（自动）：聊天页面问问题，后端先查混合检索 Top-K（0.75×向量 + 0.25×词面）→ 拼进 prompt
    └─ 方式 B（主动工具调用）：ReAct agent 决定调用 knowledge_search 工具，
          返回的结果再让模型组织回答（回答引用来源更灵活）
 ```
@@ -277,6 +316,18 @@ npm run dev
 > 出差一天吃饭能报多少钱？
 
 期望在回复里看到明确的 30/50/60 数字，并说明"按出差天数自动计算"。
+
+**数据备份与恢复**：知识库数据持久化在 MySQL `jarvis` 库（见 §4.0）。
+种子文档保存在 `docs/kb-seeds/`（`team-handbook.md`、`resume.md`、`llm-wiki-research.md`），数据丢失时可通过页面重新导入或：
+
+```bash
+curl -s -X POST http://localhost:8080/api/knowledge/documents \
+  -H 'Content-Type: application/json' \
+  -d "$(python3 -c "import json;print(json.dumps({'title':'贾志远的简历','fileName':'resume.md','content':open('docs/kb-seeds/resume.md').read()},ensure_ascii=False))")"
+```
+
+**注意**：停止后端务必用优雅方式（Ctrl+C 或 `kill <pid>`），`kill -9` 可能丢失未落盘的事务。
+MySQL 的数据目录见 §4.0（本机 /tmp/jarvis-mysql-data，重启机器后需重新初始化并导入种子文档）。
 
 ---
 
@@ -389,25 +440,24 @@ compose 中所有数据都走命名卷，不会因为 `compose down` 丢失：
 |---|---|---|
 | `ollama_data` | `/root/.ollama`（bge-m3 等模型 blobs）| 最大；首次下载完后别删 |
 | `backend_logs` | `/app/log`（Logback 三个日志）| 排查 RAG 注入、SSE 报错用 |
-| `backend_data` | `/app/data`（H2 文件库，`DATA_DIR=/app/data`）| 知识库文档跨容器重建持久 |
+| `mysql_data` | `/var/lib/mysql`（task + 知识库数据）| 知识库跨容器重建持久 |
 | `ollama_webui_data` | WebUI 用户/会话 | profile=webui 才创建 |
 
-一键备份（会各打一个 tar.gz 到 `backup/`）：
+一键备份（`backup/` 下）：
 
 ```bash
 ./deploy.sh backup
 # backup/jarvis-20260829-170500/
-#   ├── backend-logdata.tar.gz
-#   └── ollama-models.tar.gz
+#   ├── backend-logs.tar.gz     # 后端日志
+#   ├── mysql-jarvis.sql.gz     # MySQL 逻辑备份（mysqldump）
+#   └── ollama-models.tar.gz    # Ollama 模型
 ```
 
-恢复（示例）：
+MySQL 恢复（示例）：
 
 ```bash
-docker compose down
-docker run --rm -v jarvis_ollama_data:/dst -v "$(pwd)/backup/jarvis-xxx:/src" \
-  alpine sh -c "cd /dst && tar xzf /src/ollama-models.tar.gz"
-docker compose up -d
+gunzip -c backup/jarvis-xxx/mysql-jarvis.sql.gz | \
+  docker compose exec -T mysql sh -c 'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD"'
 ```
 
 ### 9.6 GPU 加速（可选）
