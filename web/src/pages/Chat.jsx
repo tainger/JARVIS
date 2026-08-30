@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Card, Input, Space, Spin, Tag, Typography } from 'antd'
 import { ClearOutlined, LoadingOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { streamChat } from '../api/client'
 import { BRAND, CLAY, CLAY_SHADOW } from '../theme'
 
@@ -196,7 +197,7 @@ export default function Chat() {
                   >
                     {msg.content ? (
                       <div className="chat-markdown">
-                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                       </div>
                     ) : (
                       <Spin indicator={<LoadingOutlined spin />} size="small" />

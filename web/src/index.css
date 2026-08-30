@@ -392,3 +392,21 @@ body {
 .chat-markdown th {
   background: var(--clay-purple-tint);
 }
+
+.chat-markdown a {
+  color: var(--clay-purple);
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  text-underline-offset: 3px;
+}
+
+.chat-markdown li {
+  margin-bottom: 4px;
+}
+
+.chat-markdown hr {
+  border: none;
+  border-top: 2px dashed rgba(108, 92, 231, 0.2);
+  margin: 12px 0;
+}
