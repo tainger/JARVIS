@@ -20,6 +20,7 @@ import com.example.jarvis.model.KnowledgeChunk;
 import com.example.jarvis.model.KnowledgeDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -31,6 +32,7 @@ import org.springframework.util.StringUtils;
  * - 内存索引采用写时复制快照，导入/删除后原子替换，线程安全
  */
 @Service
+@DependsOnDatabaseInitialization  // 保证在 Flyway / sql.init 等数据库初始化之后再 @PostConstruct 加载索引
 public class KnowledgeService {
 
 	private static final Logger log = LoggerFactory.getLogger(KnowledgeService.class);
