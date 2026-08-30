@@ -57,6 +57,7 @@ class RagEvalTest {
 	private static final double MIN_MRR = 0.60;
 	private static final double MIN_SEPARATION = 0.10;
 	private static final double MAX_WRONG_INJECT_RATE = 0.25;
+	private static final double MIN_INJECT_RECALL = 0.85;
 	private static final int TOP_K = 4;
 
 	private static final Pattern CITATION = Pattern.compile("\\[(\\d+)]");
@@ -108,9 +109,13 @@ class RagEvalTest {
 				.filter(r -> knowledgeService.buildInjection(r.c().question, TOP_K) != null)
 				.count();
 		double wrongInjectRate = (double) wrongInject / irrelevant.size();
+		long injected = relevant.stream()
+				.filter(r -> knowledgeService.buildInjection(r.c().question, TOP_K) != null)
+				.count();
+		double injectRecall = (double) injected / relevant.size();
 
 		String report = renderReport(relevant, irrelevant, recallAt4, mrr, sep,
-				wrongInject, wrongInjectRate);
+				wrongInject, wrongInjectRate, injectRecall);
 		System.out.println(report);
 		Path out = Path.of("target", "rag-eval-report.md");
 		Files.createDirectories(out.getParent());
@@ -122,8 +127,11 @@ class RagEvalTest {
 		assertTrue(sep >= MIN_SEPARATION,
 				"相关-无关分数区分度=%.3f 低于基线 %.2f".formatted(sep, MIN_SEPARATION));
 		assertTrue(wrongInjectRate <= MAX_WRONG_INJECT_RATE,
-				"误注入率=%.2f 高于上限 %.2f（考虑调高 rag.retrieval.min-score）"
+				"误注入率=%.2f 高于上限 %.2f（考虑调高 rag.retrieval.inject-score）"
 						.formatted(wrongInjectRate, MAX_WRONG_INJECT_RATE));
+		assertTrue(injectRecall >= MIN_INJECT_RECALL,
+				"注入召回=%.2f 低于基线 %.2f——inject-score 门槛在误杀真实知识问题"
+						.formatted(injectRecall, MIN_INJECT_RECALL));
 	}
 
 	/** 命中判定：文档匹配，且块内容含任一标注关键词（把"只答对文档"的水分挤掉） */
@@ -158,7 +166,8 @@ class RagEvalTest {
 	}
 
 	private String renderReport(List<CaseResult> relevant, List<CaseResult> irrelevant,
-			double recallAt4, double mrr, double sep, long wrongInject, double wrongInjectRate) {
+			double recallAt4, double mrr, double sep, long wrongInject, double wrongInjectRate,
+			double injectRecall) {
 		StringBuilder sb = new StringBuilder();
 		sb.append("# JARVIS RAG 评测报告\n\n");
 		sb.append("- 用例：%d 相关 + %d 无关 ｜ Top-K=%d ｜ 评分：0.75×cosine + 0.25×词面\n\n"
@@ -170,6 +179,7 @@ class RagEvalTest {
 		sb.append("| MRR | %.3f | ≥ %.2f | %s |\n".formatted(mrr, MIN_MRR, mark(mrr >= MIN_MRR)));
 		sb.append("| 分数区分度（相关Top1均值−无关Top1均值）| %.3f | ≥ %.2f | %s |\n".formatted(sep, MIN_SEPARATION, mark(sep >= MIN_SEPARATION)));
 		sb.append("| 误注入率 | %d/%d=%.2f | ≤ %.2f | %s |\n".formatted(wrongInject, irrelevant.size(), wrongInjectRate, MAX_WRONG_INJECT_RATE, mark(wrongInjectRate <= MAX_WRONG_INJECT_RATE)));
+		sb.append("| 注入召回（强相关题确实被注入）| %.3f | ≥ %.2f | %s |\n".formatted(injectRecall, MIN_INJECT_RECALL, mark(injectRecall >= MIN_INJECT_RECALL)));
 
 		sb.append("\n## 分查询类型\n\n");
 		sb.append("| 类型 | 用例 | Recall@%d | MRR | Top1 均分 |\n|---|---|---|---|---|\n".formatted(TOP_K));

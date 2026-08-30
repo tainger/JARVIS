@@ -175,10 +175,16 @@ public class KnowledgeService {
 	/**
 	 * 检索并组装"带引用编号的注入上下文"：片段按 [1..n] 编号（与返回的 hits 顺序一致，
 	 * 供前端渲染来源卡片），无足够相关的命中返回 null。
-	 * 这里做 minScore 过滤：注入对话的片段必须过相关性门槛，避免噪声污染回答。
+	 * 这里做双阈值过滤：Top1 必须达到 injectScore 才注入（强相关才走入口 A）；
+	 * 落在 [minScore, injectScore) 的多为"工具意图"等域内噪声，不注入，
+	 * 由 agent 自主判断是否调用 knowledge_search 工具。
 	 */
 	public RagInjection buildInjection(String query, Integer topK) {
-		List<SearchHit> hits = search(query, topK).stream()
+		List<SearchHit> all = search(query, topK);
+		if (all.isEmpty() || all.get(0).score() < properties.getRetrieval().getInjectScore()) {
+			return null;
+		}
+		List<SearchHit> hits = all.stream()
 				.filter(hit -> hit.score() >= properties.getRetrieval().getMinScore())
 				.toList();
 		if (hits.isEmpty()) {

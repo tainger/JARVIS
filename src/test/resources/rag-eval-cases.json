@@ -41,5 +41,10 @@
   {"id": "irr-05", "type": "无关", "question": "红烧肉怎么做才好吃", "irrelevant": true},
   {"id": "irr-06", "type": "无关", "question": "明天星期几", "irrelevant": true},
   {"id": "irr-07", "type": "无关", "question": "推荐一部好看的科幻电影", "irrelevant": true},
-  {"id": "irr-08", "type": "无关", "question": "1 加 1 等于几", "irrelevant": true}
+  {"id": "irr-08", "type": "无关", "question": "1 加 1 等于几", "irrelevant": true},
+
+  {"id": "tool-01", "type": "工具意图", "question": "帮我列出所有任务", "irrelevant": true},
+  {"id": "tool-02", "type": "工具意图", "question": "帮我创建一个新任务，标题是准备周报", "irrelevant": true},
+  {"id": "tool-03", "type": "工具意图", "question": "把已取消的任务都清理掉", "irrelevant": true},
+  {"id": "tool-04", "type": "工具意图", "question": "任务 T-3 的负责人改成我", "irrelevant": true}
 ]
