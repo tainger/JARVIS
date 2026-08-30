@@ -36,7 +36,10 @@ public class RagProperties {
 		private String model = "bge-m3";
 
 		/** 单次请求超时（秒） */
-		private int timeoutSeconds = 60;
+		private int timeoutSeconds = 120;
+
+		/** 模型在内存中的保活时长（Ollama keep_alive），避免空闲卸载后冷加载超时 */
+		private String keepAlive = "60m";
 
 		public String getBaseUrl() {
 			return baseUrl;
@@ -60,6 +63,14 @@ public class RagProperties {
 
 		public void setTimeoutSeconds(int timeoutSeconds) {
 			this.timeoutSeconds = timeoutSeconds;
+		}
+
+		public String getKeepAlive() {
+			return keepAlive;
+		}
+
+		public void setKeepAlive(String keepAlive) {
+			this.keepAlive = keepAlive;
 		}
 
 	}

@@ -5,6 +5,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,7 @@ public class OllamaEmbeddingClient {
 
 	/**
 	 * 批量向量化一组文本，返回与输入顺序一致的向量列表。
+	 * 请求携带 keep_alive 让模型常驻内存，避免空闲卸载后冷加载超时。
 	 */
 	public List<float[]> embed(List<String> texts) {
 		if (texts.isEmpty()) {
@@ -48,7 +50,8 @@ public class OllamaEmbeddingClient {
 		try {
 			String body = objectMapper.writeValueAsString(Map.of(
 					"model", cfg.getModel(),
-					"input", texts));
+					"input", texts,
+					"keep_alive", cfg.getKeepAlive()));
 			HttpRequest request = HttpRequest.newBuilder()
 					.uri(URI.create(cfg.getBaseUrl() + "/api/embed"))
 					.timeout(Duration.ofSeconds(cfg.getTimeoutSeconds()))
@@ -69,6 +72,11 @@ public class OllamaEmbeddingClient {
 			return list.stream()
 					.map(item -> toVector((List<?>) item))
 					.toList();
+		}
+		catch (HttpTimeoutException e) {
+			throw new IllegalStateException(
+					"Ollama 向量化请求超时（>%ds）。通常是模型冷加载过慢或 Ollama 忙碌，"
+							+ "可增大 rag.embedding.timeout-seconds 后重试：%s".formatted(cfg.getTimeoutSeconds(), e.getMessage()), e);
 		}
 		catch (IOException e) {
 			throw new IllegalStateException(
