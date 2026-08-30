@@ -1,6 +1,7 @@
 import { Alert, Avatar, Card, Space, Table, Tag } from 'antd'
 import { UserOutlined } from '@ant-design/icons'
 import PageContainer from '../components/PageContainer'
+import { CLAY } from '../theme'
 
 // Mock data — backend user API not implemented yet.
 const mockUsers = [
@@ -34,6 +35,8 @@ export default function Users() {
   return (
     <PageContainer
       title="用户管理"
+      emoji="👥"
+      emojiBg={CLAY.coralTint}
       breadcrumb={[{ title: '首页', to: '/dashboard' }, { title: '用户管理' }]}
       subTitle="系统用户与角色"
     >

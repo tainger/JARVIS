@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, Card, Col, Descriptions, Row, Spin, Tag, Typography } from 'antd'
 import { RobotOutlined, ToolOutlined, ApiOutlined } from '@ant-design/icons'
 import PageContainer from '../components/PageContainer'
+import { BRAND, CLAY } from '../theme'
 import { mcpApi } from '../api/client'
 
 const { Paragraph, Text } = Typography
@@ -56,7 +57,7 @@ export default function Agents() {
                 column={1}
                 title={
                   <>
-                    <RobotOutlined style={{ color: '#2f54eb', marginRight: 8 }} />
+                    <RobotOutlined style={{ color: BRAND.primary, marginRight: 8 }} />
                     {agent.name}
                     <Tag color="success" style={{ marginLeft: 8 }}>
                       {agent.status}
@@ -80,7 +81,7 @@ export default function Agents() {
         style={{ marginTop: 16 }}
         title={
           <>
-            <ApiOutlined style={{ color: '#2f54eb', marginRight: 8 }} />
+            <ApiOutlined style={{ color: BRAND.primary, marginRight: 8 }} />
             MCP Servers（Model Context Protocol）
           </>
         }
@@ -130,7 +131,7 @@ export default function Agents() {
             style={{ marginTop: 16 }}
             title={
               <>
-                <ToolOutlined style={{ color: '#2f54eb', marginRight: 8 }} />
+                <ToolOutlined style={{ color: BRAND.primary, marginRight: 8 }} />
                 Toolkit 中所有可用工具（{mcp.activeToolCount}）
               </>
             }

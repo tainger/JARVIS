@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Avatar, Dropdown, Layout, Menu, Space, Tag, theme } from 'antd'
+import { Avatar, Dropdown, Layout, Menu, Space, Tag } from 'antd'
 import {
   DashboardOutlined,
   LogoutOutlined,
@@ -14,7 +14,7 @@ import {
   BookOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { BRAND, LAYOUT } from '../theme'
+import { BRAND, CLAY, CLAY_SHADOW, LAYOUT, RADIUS } from '../theme'
 
 const { Sider, Header, Content, Footer } = Layout
 
@@ -27,11 +27,54 @@ const menuItems = [
   { key: '/knowledge', icon: <BookOutlined />, label: '知识库' },
 ]
 
+// 漂浮黏土装饰：低饱和圆块，均匀铺在内容后面，营造"软"的空间感
+function FloatingBlobs() {
+  return (
+    <div aria-hidden style={{ position: 'fixed', inset: 0, overflow: 'hidden', zIndex: 0, pointerEvents: 'none' }}>
+      <div
+        className="clay-float-slow"
+        style={{
+          position: 'absolute', top: '12%', right: '6%',
+          width: 120, height: 120, borderRadius: '36% 64% 55% 45% / 50% 45% 55% 50%',
+          background: CLAY.purpleTint, opacity: 0.9,
+          boxShadow: CLAY_SHADOW.raised,
+        }}
+      />
+      <div
+        className="clay-float"
+        style={{
+          position: 'absolute', top: '55%', right: '14%',
+          width: 64, height: 64, borderRadius: '45% 55% 60% 40% / 55% 45% 55% 45%',
+          background: CLAY.coralTint, opacity: 0.85,
+          boxShadow: CLAY_SHADOW.small, animationDelay: '0.8s',
+        }}
+      />
+      <div
+        className="clay-float-slow"
+        style={{
+          position: 'absolute', bottom: '10%', left: '30%',
+          width: 90, height: 90, borderRadius: '55% 45% 40% 60% / 45% 60% 40% 55%',
+          background: CLAY.mustardTint, opacity: 0.8,
+          boxShadow: CLAY_SHADOW.small, animationDelay: '1.6s',
+        }}
+      />
+      <div
+        className="clay-float"
+        style={{
+          position: 'absolute', top: '30%', left: '6%',
+          width: 48, height: 48, borderRadius: '40% 60% 55% 45% / 60% 40% 60% 40%',
+          background: CLAY.mintTint, opacity: 0.9,
+          boxShadow: CLAY_SHADOW.small, animationDelay: '2.2s',
+        }}
+      />
+    </div>
+  )
+}
+
 export default function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
-  const { token } = theme.useToken()
 
   const user = useMemo(() => {
     try {
@@ -50,12 +93,13 @@ export default function AdminLayout() {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
+      <FloatingBlobs />
       <Sider
         trigger={null}
         collapsible
         collapsed={collapsed}
         width={siderWidth}
-        theme="dark"
+        theme="light"
         style={{
           overflow: 'auto',
           height: '100vh',
@@ -64,27 +108,34 @@ export default function AdminLayout() {
           top: 0,
           bottom: 0,
           zIndex: 20,
-          boxShadow: '2px 0 8px rgba(0,0,0,0.15)',
+          margin: 12,
+          height: 'calc(100vh - 24px)',
+          borderRadius: 28,
+          boxShadow: CLAY_SHADOW.raised,
         }}
       >
         <div
           style={{
-            height: LAYOUT.headerHeight,
+            height: 72,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: 8,
-            color: '#fff',
+            gap: 10,
             fontSize: collapsed ? 20 : 17,
-            fontWeight: 700,
-            letterSpacing: 1,
+            fontWeight: 800,
+            letterSpacing: '-0.02em',
+            color: CLAY.ink,
           }}
         >
-          <RobotOutlined style={{ color: BRAND.primary, fontSize: 24 }} />
-          {!collapsed && <span>JARVIS Admin</span>}
+          <span
+            className="clay-icon-box"
+            style={{ width: 40, height: 40, fontSize: 20, background: CLAY.purpleTint }}
+          >
+            <RobotOutlined style={{ color: BRAND.primary }} />
+          </span>
+          {!collapsed && <span>JARVIS</span>}
         </div>
         <Menu
-          theme="dark"
           mode="inline"
           selectedKeys={[location.pathname]}
           items={menuItems}
@@ -93,35 +144,43 @@ export default function AdminLayout() {
       </Sider>
       <Layout
         style={{
-          marginInlineStart: collapsed ? 80 : siderWidth,
+          marginInlineStart: collapsed ? 92 : siderWidth + 12,
           transition: 'margin-inline-start 0.2s',
+          position: 'relative',
+          zIndex: 1,
         }}
       >
         <Header
           style={{
-            padding: '0 24px',
+            padding: '0 28px',
             height: LAYOUT.headerHeight,
-            lineHeight: `${LAYOUT.headerHeight}px`,
-            background: token.colorBgContainer,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             position: 'sticky',
             top: 0,
             zIndex: 10,
-            boxShadow: '0 1px 4px rgba(0,21,41,0.08)',
           }}
         >
           <span
             role="button"
             tabIndex={0}
-            style={{ fontSize: 18, cursor: 'pointer' }}
+            className="clay-icon-box clay-card-hover"
+            style={{ width: 40, height: 40, fontSize: 16, background: '#fff', cursor: 'pointer' }}
             onClick={() => setCollapsed(!collapsed)}
           >
             {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
           </span>
           <Space size="middle">
-            <Tag color="processing" icon={<RobotOutlined />}>
+            <Tag
+              icon={<RobotOutlined />}
+              style={{
+                background: CLAY.mintTint,
+                color: CLAY.mint,
+                fontWeight: 700,
+                boxShadow: CLAY_SHADOW.small,
+              }}
+            >
               Agent 在线
             </Tag>
             <Dropdown
@@ -143,13 +202,23 @@ export default function AdminLayout() {
                 ],
               }}
             >
-              <Space style={{ cursor: 'pointer' }}>
+              <Space
+                style={{
+                  cursor: 'pointer',
+                  background: '#fff',
+                  borderRadius: RADIUS.pill,
+                  padding: '6px 14px 6px 6px',
+                  boxShadow: CLAY_SHADOW.small,
+                }}
+              >
                 <Avatar
-                  size="small"
+                  size={32}
                   icon={<UserOutlined />}
-                  style={{ background: BRAND.primary }}
+                  style={{ background: BRAND.primary, fontWeight: 700 }}
                 />
-                <span>{user?.name || 'admin'}</span>
+                <span style={{ fontWeight: 700, color: CLAY.ink }}>
+                  {user?.name || 'admin'}
+                </span>
               </Space>
             </Dropdown>
           </Space>
@@ -162,7 +231,7 @@ export default function AdminLayout() {
         >
           <Outlet />
         </Content>
-        <Footer style={{ textAlign: 'center', color: token.colorTextSecondary }}>
+        <Footer style={{ textAlign: 'center', color: CLAY.inkSoft, background: 'transparent' }}>
           JARVIS Admin ©{new Date().getFullYear()} · Powered by Spring Boot & Ant Design
         </Footer>
       </Layout>

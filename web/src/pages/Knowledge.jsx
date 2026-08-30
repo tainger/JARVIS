@@ -25,6 +25,7 @@ import {
 } from '@ant-design/icons'
 import { knowledgeApi } from '../api/client'
 import PageContainer from '../components/PageContainer'
+import { CLAY, CLAY_SHADOW } from '../theme'
 
 const { Paragraph } = Typography
 
@@ -162,6 +163,8 @@ export default function Knowledge() {
   return (
     <PageContainer
       title="知识库"
+      emoji="📚"
+      emojiBg={CLAY.mintTint}
       breadcrumb={[{ title: '首页', to: '/dashboard' }, { title: '知识库' }]}
       subTitle="RAG 知识库：导入文档，自动分块并向量化，对话时自动检索注入"
       extra={
@@ -170,11 +173,20 @@ export default function Knowledge() {
         </Button>
       }
     >
-      <Card style={{ marginBottom: 16 }}>
-        <Space size="large">
-          <Statistic title="文档数" value={stats?.documents ?? '-'} />
-          <Statistic title="已索引片段" value={stats?.indexedChunks ?? '-'} />
-          <Statistic title="向量模型" value={stats?.embeddingModel ?? '-'} />
+      <Card style={{ marginBottom: 20 }}>
+        <Space size="large" wrap>
+          <Space size={12}>
+            <span className="clay-icon-box" style={{ background: CLAY.purpleTint, width: 44, height: 44, fontSize: 22 }}>📄</span>
+            <Statistic title="文档数" value={stats?.documents ?? '-'} />
+          </Space>
+          <Space size={12}>
+            <span className="clay-icon-box" style={{ background: CLAY.mustardTint, width: 44, height: 44, fontSize: 22 }}>🧩</span>
+            <Statistic title="已索引片段" value={stats?.indexedChunks ?? '-'} />
+          </Space>
+          <Space size={12}>
+            <span className="clay-icon-box" style={{ background: CLAY.mintTint, width: 44, height: 44, fontSize: 22 }}>🧠</span>
+            <Statistic title="向量模型" value={stats?.embeddingModel ?? '-'} />
+          </Space>
         </Space>
       </Card>
 
@@ -194,12 +206,14 @@ export default function Knowledge() {
         {hits.length > 0 && (
           <div style={{ marginTop: 16 }}>
             {hits.map((hit, i) => (
-              <Card key={i} size="small" style={{ marginBottom: 8 }}>
+              <Card key={i} size="small" className="clay-card-hover" style={{ marginBottom: 10, borderRadius: 20 }}>
                 <Space wrap style={{ marginBottom: 8 }}>
-                  <Tag color="processing">#{i + 1}</Tag>
-                  <Tag>{hit.documentTitle}</Tag>
-                  <Tag>片段 {hit.seq}</Tag>
-                  <Tag color="green">相似度 {hit.score.toFixed(3)}</Tag>
+                  <Tag style={{ background: CLAY.purpleTint, color: CLAY.purple }}>#{i + 1}</Tag>
+                  <Tag style={{ background: CLAY.base, color: CLAY.ink }}>{hit.documentTitle}</Tag>
+                  <Tag style={{ background: CLAY.base, color: CLAY.ink }}>片段 {hit.seq}</Tag>
+                  <Tag style={{ background: CLAY.mintTint, color: CLAY.mint }}>
+                    相关度 {hit.score.toFixed(3)}
+                  </Tag>
                 </Space>
                 <Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}>
                   {hit.content}

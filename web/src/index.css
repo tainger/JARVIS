@@ -1,3 +1,24 @@
+/* ============================================================
+   JARVIS 全局样式 · 3D 黏土立体风（Claymorphism）
+   - 色板见 theme.js（CLAY/CLAY_SHADOW），此处为同名 CSS 变量
+   - 所有控件三层阴影：顶部内高光 + 内侧暗缘 + 底部柔影
+   - 圆角：卡片 28px / 图标盒 20px / 控件药丸 999px，禁用直角尖角
+   ============================================================ */
+
+:root {
+  --clay-base: #f5f7fa;
+  --clay-purple: #6c5ce7;
+  --clay-purple-tint: #f3f0ff;
+  --clay-coral: #ff7675;
+  --clay-coral-tint: #fff0f0;
+  --clay-mustard: #fdcb6e;
+  --clay-mustard-tint: #fff9e8;
+  --clay-mint: #00b894;
+  --clay-mint-tint: #e8faf5;
+  --clay-ink: #3a3a52;
+  --clay-ink-soft: #8a8aa3;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -8,11 +29,292 @@ html,
 body,
 #root {
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC',
+  font-family: 'Nunito', 'Quicksand', -apple-system, BlinkMacSystemFont, 'PingFang SC',
     'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  color: var(--clay-ink);
 }
 
-/* Chat markdown styles */
+body {
+  background: var(--clay-base);
+  /* 页面四角柔光色晕，让底色不死板 */
+  background-image:
+    radial-gradient(640px 420px at 88% -60px, rgba(108, 92, 231, 0.08), transparent 70%),
+    radial-gradient(520px 380px at -80px 60%, rgba(255, 118, 117, 0.07), transparent 70%),
+    radial-gradient(480px 360px at 50% 115%, rgba(0, 184, 148, 0.05), transparent 70%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: rgba(108, 92, 231, 0.25);
+}
+
+/* ---------- 黏土工具类 ---------- */
+
+.clay-card {
+  background: #fff;
+  border-radius: 28px;
+  box-shadow:
+    inset 0 -4px 8px rgba(255, 255, 255, 0.8),
+    inset 0 4px 8px rgba(0, 0, 0, 0.05),
+    0 12px 24px rgba(108, 92, 231, 0.16),
+    0 4px 8px rgba(0, 0, 0, 0.04);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.clay-card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    inset 0 -4px 8px rgba(255, 255, 255, 0.8),
+    inset 0 4px 8px rgba(0, 0, 0, 0.05),
+    0 20px 36px rgba(108, 92, 231, 0.24),
+    0 8px 16px rgba(0, 0, 0, 0.06);
+}
+
+/* 凹陷槽：输入区 / 内嵌容器，像按进面团里 */
+.clay-inset {
+  background: var(--clay-base);
+  border-radius: 22px;
+  box-shadow:
+    inset 0 3px 8px rgba(108, 92, 231, 0.1),
+    inset 0 -2px 4px rgba(255, 255, 255, 0.9);
+}
+
+/* 3D 图标盒 */
+.clay-icon-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 20px;
+  font-size: 26px;
+  box-shadow:
+    inset 0 -2px 4px rgba(255, 255, 255, 0.8),
+    inset 0 2px 4px rgba(0, 0, 0, 0.05),
+    0 6px 14px rgba(108, 92, 231, 0.18);
+}
+
+/* 漂浮装饰（Hero / 登录页 / 布局背景） */
+@keyframes clay-float {
+  from {
+    transform: translateY(-8px) rotate(-2deg);
+  }
+  to {
+    transform: translateY(10px) rotate(3deg);
+  }
+}
+
+.clay-float {
+  animation: clay-float 3s infinite alternate ease-in-out;
+}
+
+.clay-float-slow {
+  animation: clay-float 4.6s infinite alternate ease-in-out;
+}
+
+/* 柔和滚动条 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(108, 92, 231, 0.25);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(108, 92, 231, 0.45);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- antd 组件黏土化覆盖 ---------- */
+
+/* 按钮：药丸形 + 上浮/按下微交互 */
+.ant-btn {
+  border-radius: 999px !important;
+  font-weight: 600;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+.ant-btn:not(.ant-btn-text):not(.ant-btn-link):not(.ant-btn-sm) {
+  box-shadow:
+    inset 0 -3px 6px rgba(255, 255, 255, 0.35),
+    inset 0 2px 4px rgba(0, 0, 0, 0.04),
+    0 6px 14px rgba(108, 92, 231, 0.14);
+}
+
+.ant-btn:not(.ant-btn-text):not(.ant-btn-link):not(.ant-btn-sm):hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 -3px 6px rgba(255, 255, 255, 0.35),
+    inset 0 2px 4px rgba(0, 0, 0, 0.04),
+    0 10px 20px rgba(108, 92, 231, 0.24);
+}
+
+.ant-btn:not(.ant-btn-text):not(.ant-btn-link):not(.ant-btn-sm):active {
+  transform: translateY(0);
+  box-shadow:
+    inset 0 3px 6px rgba(0, 0, 0, 0.08),
+    0 2px 6px rgba(108, 92, 231, 0.1);
+}
+
+.ant-btn-text:hover,
+.ant-btn-link:hover {
+  transform: none;
+}
+
+/* 卡片：28px 圆角 + 黏土阴影 */
+.ant-card {
+  border-radius: 28px !important;
+  border: none;
+  box-shadow:
+    inset 0 -4px 8px rgba(255, 255, 255, 0.8),
+    inset 0 4px 8px rgba(0, 0, 0, 0.05),
+    0 12px 24px rgba(108, 92, 231, 0.16),
+    0 4px 8px rgba(0, 0, 0, 0.04);
+}
+
+.ant-card .ant-card-head {
+  border-bottom: 2px dashed rgba(108, 92, 231, 0.12);
+  border-radius: 28px 28px 0 0;
+  padding-inline: 24px;
+}
+
+.ant-card .ant-card-head-title {
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* 标签：药丸 */
+.ant-tag {
+  border-radius: 999px !important;
+  border: none;
+  font-weight: 600;
+  padding-inline: 10px;
+  line-height: 24px;
+}
+
+/* 输入框 / 选择器：圆润胶囊 */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-select:not(.ant-select-customize-input) .ant-select-selector,
+.ant-picker {
+  border-radius: 16px !important;
+}
+
+.ant-input-textarea .ant-input {
+  border-radius: 16px !important;
+}
+
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-affix-wrapper:focus,
+.ant-input-affix-wrapper-focused {
+  box-shadow: 0 0 0 4px rgba(108, 92, 231, 0.12) !important;
+}
+
+/* 表格：圆润行，斑马纹柔染 */
+.ant-table {
+  border-radius: 20px;
+}
+
+.ant-table-thead > tr > th {
+  background: var(--clay-purple-tint) !important;
+  color: var(--clay-purple);
+  font-weight: 800;
+  border-radius: 0 !important;
+}
+
+.ant-table-thead > tr > th:first-child {
+  border-start-start-radius: 20px !important;
+  border-start-end-radius: 20px !important;
+}
+
+.ant-table-tbody > tr > td {
+  border-block-end: 2px dashed rgba(108, 92, 231, 0.08);
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: var(--clay-purple-tint) !important;
+}
+
+/* 分页器圆 */
+.ant-pagination .ant-pagination-item,
+.ant-pagination .ant-pagination-item-link {
+  border-radius: 12px !important;
+  border: none;
+  box-shadow:
+    inset 0 -2px 4px rgba(255, 255, 255, 0.8),
+    0 4px 10px rgba(108, 92, 231, 0.12);
+}
+
+.ant-pagination .ant-pagination-item-active {
+  background: var(--clay-purple);
+}
+
+.ant-pagination .ant-pagination-item-active a {
+  color: #fff;
+}
+
+/* 菜单（侧栏）：胶囊选中态 */
+.ant-menu-inline {
+  border-inline-end: none !important;
+}
+
+.ant-menu-item {
+  border-radius: 999px !important;
+  margin-inline: 10px !important;
+  width: calc(100% - 20px);
+  font-weight: 600;
+}
+
+/* 弹窗 / 气泡卡片：圆润 */
+.ant-modal .ant-modal-content {
+  border-radius: 28px;
+  box-shadow: 0 24px 60px rgba(108, 92, 231, 0.28);
+}
+
+.ant-modal .ant-modal-header {
+  border-radius: 24px;
+}
+
+.ant-popover .ant-popover-inner {
+  border-radius: 22px;
+}
+
+.ant-message .ant-message-notice-content {
+  border-radius: 999px;
+  box-shadow: 0 10px 28px rgba(108, 92, 231, 0.2);
+}
+
+.ant-alert {
+  border-radius: 20px !important;
+  border: none;
+}
+
+/* 进度条：圆润 */
+.ant-progress .ant-progress-inner {
+  border-radius: 999px !important;
+}
+
+/* 开关 */
+.ant-switch {
+  border-radius: 999px;
+}
+
+/* ---------- Chat 气泡 & markdown ---------- */
+
 .chat-markdown {
   line-height: 1.7;
   word-break: break-word;
@@ -27,9 +329,8 @@ body,
 }
 
 .chat-markdown pre {
-  background: #f6f8fa;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  background: var(--clay-purple-tint);
+  border-radius: 16px;
   padding: 12px;
   overflow-x: auto;
   font-size: 13px;
@@ -37,16 +338,18 @@ body,
 }
 
 .chat-markdown code {
-  background: #f6f8fa;
-  border-radius: 4px;
-  padding: 2px 5px;
+  background: var(--clay-purple-tint);
+  border-radius: 8px;
+  padding: 2px 6px;
   font-size: 13px;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  color: var(--clay-purple);
 }
 
 .chat-markdown pre code {
   background: transparent;
   padding: 0;
+  color: inherit;
 }
 
 .chat-markdown ul,
@@ -60,23 +363,32 @@ body,
 .chat-markdown h3,
 .chat-markdown h4 {
   margin: 12px 0 8px;
-  font-weight: 600;
+  font-weight: 800;
 }
 
 .chat-markdown blockquote {
-  border-left: 3px solid #d9d9d9;
-  padding-left: 12px;
-  color: #666;
+  border-left: 4px solid var(--clay-purple);
+  border-radius: 0 12px 12px 0;
+  padding: 4px 12px;
+  background: var(--clay-purple-tint);
+  color: var(--clay-ink-soft);
   margin: 8px 0;
 }
 
 .chat-markdown table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   margin: 8px 0;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .chat-markdown th,
 .chat-markdown td {
-  border: 1px solid #e5e7eb;
+  border-bottom: 2px dashed rgba(108, 92, 231, 0.1);
   padding: 6px 12px;
+}
+
+.chat-markdown th {
+  background: var(--clay-purple-tint);
 }

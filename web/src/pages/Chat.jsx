@@ -1,29 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  Alert,
-  Avatar,
-  Button,
-  Card,
-  Empty,
-  Input,
-  Space,
-  Spin,
-  Tag,
-  Typography,
-} from 'antd'
-import {
-  ClearOutlined,
-  LoadingOutlined,
-  RobotOutlined,
-  SendOutlined,
-  StopOutlined,
-  UserOutlined,
-} from '@ant-design/icons'
+import { Alert, Button, Card, Input, Space, Spin, Tag, Typography } from 'antd'
+import { ClearOutlined, LoadingOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import { streamChat } from '../api/client'
+import { BRAND, CLAY, CLAY_SHADOW } from '../theme'
 
 const { TextArea } = Input
-const { Title, Text } = Typography
 
 const suggestions = [
   '帮我列出所有任务',
@@ -97,9 +79,11 @@ export default function Chat() {
     <Card
       title={
         <Space>
-          <Avatar size="small" icon={<RobotOutlined />} style={{ background: '#2f54eb' }} />
+          <span className="clay-icon-box" style={{ width: 36, height: 36, fontSize: 18, background: CLAY.purpleTint }}>
+            🤖
+          </span>
           <span>JARVIS AI 助手</span>
-          <Tag color="processing">SSE 流式</Tag>
+          <Tag style={{ background: CLAY.mintTint, color: CLAY.mint }}>SSE 流式</Tag>
         </Space>
       }
       extra={
@@ -112,8 +96,8 @@ export default function Chat() {
           清空对话
         </Button>
       }
-      style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)' }}
-      styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 16 } }}
+      style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 156px)' }}
+      styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 20 } }}
     >
       <div
         ref={listRef}
@@ -124,13 +108,23 @@ export default function Chat() {
         }}
       >
         {messages.length === 0 ? (
-          <div style={{ textAlign: 'center', marginTop: 80 }}>
-            <Empty description="开始与 JARVIS 对话，支持任务库工具调用" />
-            <Space direction="vertical" style={{ marginTop: 16 }} size={8}>
+          <div style={{ textAlign: 'center', marginTop: 70 }}>
+            <div
+              className="clay-icon-box clay-float"
+              style={{ width: 84, height: 84, fontSize: 44, background: CLAY.purpleTint, margin: '0 auto 20px' }}
+            >
+              🤖
+            </div>
+            <Typography.Title level={4} style={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
+              开始与 JARVIS 对话
+            </Typography.Title>
+            <Typography.Text type="secondary">支持任务库工具调用与知识库检索</Typography.Text>
+            <Space direction="vertical" style={{ marginTop: 24 }} size={10}>
               {suggestions.map((s) => (
                 <Button
                   key={s}
-                  type={suggestions.indexOf(s) === 0 ? 'primary' : 'default'}
+                  shape="round"
+                  style={{ height: 42, fontWeight: 700, background: CLAY.purpleTint, color: BRAND.primary, border: 'none', boxShadow: CLAY_SHADOW.small }}
                   onClick={() => send(s)}
                   disabled={streaming}
                 >
@@ -147,31 +141,35 @@ export default function Chat() {
                   <div
                     style={{
                       maxWidth: '72%',
-                      background: '#2f54eb',
+                      background: BRAND.primaryGradient,
                       color: '#fff',
-                      borderRadius: '12px 12px 2px 12px',
-                      padding: '10px 14px',
+                      borderRadius: '22px 22px 6px 22px',
+                      padding: '12px 18px',
                       whiteSpace: 'pre-wrap',
                       wordBreak: 'break-word',
+                      fontWeight: 600,
+                      boxShadow: 'inset 0 -3px 6px rgba(255,255,255,0.25), inset 0 2px 4px rgba(0,0,0,0.05), 0 8px 18px rgba(108,92,231,0.35)',
                     }}
                   >
                     {msg.content}
                   </div>
                 </div>
               ) : (
-                <div key={i} style={{ display: 'flex', gap: 10 }}>
-                  <Avatar
-                    icon={<RobotOutlined />}
-                    style={{ background: '#2f54eb', flexShrink: 0 }}
-                  />
+                <div key={i} style={{ display: 'flex', gap: 12 }}>
+                  <span
+                    className="clay-icon-box"
+                    style={{ width: 40, height: 40, fontSize: 20, background: CLAY.purpleTint, flexShrink: 0 }}
+                  >
+                    🤖
+                  </span>
                   <div
                     style={{
                       maxWidth: '76%',
-                      background: '#f6f7fb',
-                      border: '1px solid #eef0f6',
-                      borderRadius: '12px 12px 12px 2px',
-                      padding: '10px 14px',
+                      background: '#fff',
+                      borderRadius: '22px 22px 22px 6px',
+                      padding: '12px 18px',
                       minWidth: 60,
+                      boxShadow: CLAY_SHADOW.raised,
                     }}
                   >
                     {msg.content ? (
@@ -196,12 +194,15 @@ export default function Chat() {
           showIcon
           message={error}
           closable
-          style={{ marginBottom: 12 }}
+          style={{ marginBottom: 12, borderRadius: 20 }}
           onClose={() => setError('')}
         />
       )}
 
-      <Space.Compact style={{ width: '100%', marginTop: 12 }} block>
+      <div
+        className="clay-inset"
+        style={{ display: 'flex', alignItems: 'flex-end', gap: 10, padding: 10, marginTop: 12 }}
+      >
         <TextArea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -214,9 +215,11 @@ export default function Chat() {
           placeholder="输入消息，Enter 发送，Shift+Enter 换行"
           autoSize={{ minRows: 1, maxRows: 4 }}
           disabled={streaming}
+          variant="borderless"
+          style={{ background: 'transparent', padding: '8px 10px', fontWeight: 600 }}
         />
         {streaming ? (
-          <Button danger icon={<StopOutlined />} onClick={stop}>
+          <Button danger icon={<StopOutlined />} style={{ height: 42 }}>
             停止
           </Button>
         ) : (
@@ -225,11 +228,12 @@ export default function Chat() {
             icon={<SendOutlined />}
             onClick={() => send()}
             disabled={!input.trim()}
+            style={{ height: 42, fontWeight: 800 }}
           >
             发送
           </Button>
         )}
-      </Space.Compact>
+      </div>
     </Card>
   )
 }

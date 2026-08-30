@@ -163,6 +163,7 @@ export default function Tasks() {
   return (
     <PageContainer
       title="任务管理"
+      emoji="📝"
       breadcrumb={[{ title: '首页', to: '/dashboard' }, { title: '任务管理' }]}
       subTitle="创建、编辑与跟踪任务"
       extra={
