@@ -92,6 +92,8 @@ services:
       - RAG_EMBEDDING_BASE_URL=http://ollama:11434
       - RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL:-bge-m3}
       - RAG_TOP_K=${RAG_TOP_K:-4}
+      # --- H2 文件库落到挂载卷，跨容器重建持久 ---
+      - DATA_DIR=/app/data
       # --- JVM ---
       - JAVA_OPTS=-Xms256m -Xmx${BACKEND_MAX_MEM_MB:-1024}m
     ports:

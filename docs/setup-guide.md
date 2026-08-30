@@ -94,15 +94,22 @@ curl http://127.0.0.1:11434/api/embed -d '{"model":"bge-m3","input":["你好世�
 # 前提：本机运行 ollama serve，并已 ollama pull bge-m3
 rag.embedding.base-url=${RAG_EMBEDDING_BASE_URL:http://127.0.0.1:11434}
 rag.embedding.model=${RAG_EMBEDDING_MODEL:bge-m3}
-rag.embedding.timeout-seconds=60
+# 超时需覆盖模型冷加载耗时；keep_alive 让模型常驻内存，避免反复冷加载
+rag.embedding.timeout-seconds=120
+rag.embedding.keep-alive=60m
+# 单次 HTTP 请求最大输入条数：CPU 推理约 6s/条，批太大会撞超时墙
+rag.embedding.batch-size=4
 
-# 检索返回片段数 / 相似度下限（cosine，范围约 [-1,1]；文档少时可降到 0.2）
+# 混合检索：score = 0.75*向量cosine + 0.25*词面重合（中文 bigram + 英文词元）
+# min-score 仅用于"对话注入"过滤；搜索接口 /search 永远返回 Top-K 不截断
 rag.retrieval.top-k=${RAG_TOP_K:4}
-rag.retrieval.min-score=0.3
+rag.retrieval.min-score=0.25
 
-# 分块：段落感知合并的目标大小；超过硬上限的段落按句号切
-rag.chunk.max-chars=800
-rag.chunk.hard-limit=1200
+# 分块：Markdown 标题感知 + 面包屑前缀（"手册 > 报销制度"）+ 相邻块重叠；
+# 导入时自动剥离 HTML（简历类富文本导出的 <div>/<img> 噪声）
+rag.chunk.max-chars=500
+rag.chunk.hard-limit=800
+rag.chunk.overlap-chars=80
 ```
 
 ### 3.3 用环境变量覆盖（生产/自定义场景）
@@ -382,7 +389,7 @@ compose 中所有数据都走命名卷，不会因为 `compose down` 丢失：
 |---|---|---|
 | `ollama_data` | `/root/.ollama`（bge-m3 等模型 blobs）| 最大；首次下载完后别删 |
 | `backend_logs` | `/app/log`（Logback 三个日志）| 排查 RAG 注入、SSE 报错用 |
-| `backend_data` | `/app/data` | 目前 H2 是内存库没用到；切文件库就落这里 |
+| `backend_data` | `/app/data`（H2 文件库，`DATA_DIR=/app/data`）| 知识库文档跨容器重建持久 |
 | `ollama_webui_data` | WebUI 用户/会话 | profile=webui 才创建 |
 
 一键备份（会各打一个 tar.gz 到 `backup/`）：

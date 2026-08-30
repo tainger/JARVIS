@@ -1,12 +1,18 @@
 package com.example.jarvis.rag;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Deque;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import com.example.jarvis.mapper.KnowledgeMapper;
@@ -19,14 +25,21 @@ import org.springframework.util.StringUtils;
 
 /**
  * 知识库核心服务（检索核心独立，供多入口复用）：
- * - 导入：段落感知分块 → Ollama 批量向量化 → 持久化到 H2
- * - 检索：内存中全量 cosine 相似度 Top-K（文档量 &lt; 5000 块时性能可接受）
+ * - 导入：先向量化再入库（失败不留孤儿文档）；Markdown 标题感知分块 + 面包屑前缀 + 片段重叠
+ * - 检索：混合评分 = 0.75 * 向量 cosine + 0.25 * 词面重合（中文 bigram + 英文词元），
+ *         返回 Top-K 不做硬阈值截断（注入上下文时才按 minScore 过滤）
  * - 内存索引采用写时复制快照，导入/删除后原子替换，线程安全
  */
 @Service
 public class KnowledgeService {
 
 	private static final Logger log = LoggerFactory.getLogger(KnowledgeService.class);
+
+	/** Markdown 标题行，如 ## 报销制度 */
+	private static final Pattern HEADING = Pattern.compile("^(#{1,6})\\s+(.+?)\\s*#*\\s*$");
+
+	/** 混合评分中向量相似度的权重 */
+	private static final double VECTOR_WEIGHT = 0.75;
 
 	private final KnowledgeMapper knowledgeMapper;
 
@@ -43,7 +56,7 @@ public class KnowledgeService {
 			int seq, String content, float[] vector) {
 	}
 
-	/** 一条检索命中 */
+	/** 一条检索命中（score 为混合评分：向量 + 词面） */
 	public record SearchHit(long documentId, String documentTitle, int seq,
 			String content, double score) {
 	}
@@ -60,6 +73,7 @@ public class KnowledgeService {
 
 	/**
 	 * 导入一篇文档：分块 → 向量化 → 落库。
+	 * 向量化在任何 DB 写入之前执行，失败时不会留下"有文档无向量"的孤儿记录。
 	 *
 	 * @return 落库后的文档（含 id 与 chunkCount）
 	 */
@@ -67,8 +81,16 @@ public class KnowledgeService {
 		if (!StringUtils.hasText(content)) {
 			throw new IllegalArgumentException("文档内容不能为空");
 		}
-		String trimmed = content.strip();
+		// 清洗：简历/富文本导出的 md 常内嵌大量 HTML 标签（<div>/<img>/图标），
+		// 直接分块会产生大量噪声块，必须先剥离
+		String trimmed = stripHtml(content.strip());
+		if (trimmed.isEmpty()) {
+			throw new IllegalArgumentException("文档内容清洗后为空（可能全是 HTML 标签）");
+		}
 		List<String> chunks = splitIntoChunks(trimmed);
+
+		// 先向量化：失败直接抛异常，不产生半成品数据
+		List<float[]> vectors = embeddingClient.embed(chunks);
 
 		KnowledgeDocument doc = new KnowledgeDocument();
 		doc.setTitle(StringUtils.hasText(title) ? title.strip() : defaultTitle(fileName, trimmed));
@@ -76,9 +98,6 @@ public class KnowledgeService {
 		doc.setContent(trimmed);
 		doc.setChunkCount(chunks.size());
 		knowledgeMapper.insertDocument(doc);
-
-		// 批量向量化
-		List<float[]> vectors = embeddingClient.embed(chunks);
 
 		for (int i = 0; i < chunks.size(); i++) {
 			KnowledgeChunk chunk = new KnowledgeChunk();
@@ -122,7 +141,8 @@ public class KnowledgeService {
 	}
 
 	/**
-	 * 向量检索：查询向量化 → 内存全量 cosine → Top-K。
+	 * 混合检索：查询向量化 → 内存全量评分（向量 cosine + 词面重合）→ Top-K。
+	 * 不做硬阈值截断，保证"搜不到"与"分数低"是可区分的信息。
 	 */
 	public List<SearchHit> search(String query, Integer topK) {
 		if (!StringUtils.hasText(query)) {
@@ -134,14 +154,17 @@ public class KnowledgeService {
 		}
 		int k = topK != null && topK > 0 ? Math.min(topK, 20) : properties.getRetrieval().getTopK();
 
-		float[] queryVector = embeddingClient.embedOne(query.strip());
+		String q = query.strip();
+		float[] queryVector = embeddingClient.embedOne(q);
+		Set<String> queryTerms = tokenize(q);
+
 		List<SearchHit> hits = new ArrayList<>();
 		for (IndexedChunk chunk : index) {
-			double score = cosine(queryVector, chunk.vector());
-			if (score >= properties.getRetrieval().getMinScore()) {
-				hits.add(new SearchHit(chunk.documentId(), chunk.documentTitle(),
-						chunk.seq(), chunk.content(), score));
-			}
+			double vectorScore = cosine(queryVector, chunk.vector());
+			double lexicalScore = lexicalScore(queryTerms, chunk.content());
+			double score = VECTOR_WEIGHT * vectorScore + (1 - VECTOR_WEIGHT) * lexicalScore;
+			hits.add(new SearchHit(chunk.documentId(), chunk.documentTitle(),
+					chunk.seq(), chunk.content(), score));
 		}
 		return hits.stream()
 				.sorted(Comparator.comparingDouble(SearchHit::score).reversed())
@@ -150,17 +173,20 @@ public class KnowledgeService {
 	}
 
 	/**
-	 * 检索并格式化为可注入 prompt 的上下文文本；无命中返回 null。
+	 * 检索并格式化为可注入 prompt 的上下文文本；无足够相关的命中返回 null。
+	 * 这里做 minScore 过滤：注入对话的片段必须过相关性门槛，避免噪声污染回答。
 	 */
 	public String buildContext(String query, Integer topK) {
-		List<SearchHit> hits = search(query, topK);
+		List<SearchHit> hits = search(query, topK).stream()
+				.filter(hit -> hit.score() >= properties.getRetrieval().getMinScore())
+				.toList();
 		if (hits.isEmpty()) {
 			return null;
 		}
 		StringBuilder sb = new StringBuilder();
 		for (int i = 0; i < hits.size(); i++) {
 			SearchHit hit = hits.get(i);
-			sb.append(String.format("[%d] 来源：%s（片段 %d，相似度 %.3f）%n%s%n%n",
+			sb.append(String.format("[%d] 来源：%s（片段 %d，相关度 %.3f）%n%s%n%n",
 					i + 1, hit.documentTitle(), hit.seq(), hit.score(), hit.content()));
 		}
 		return sb.toString().strip();
@@ -191,57 +217,119 @@ public class KnowledgeService {
 		log.info("知识库内存索引已加载：{} 个向量块", fresh.size());
 	}
 
-	// ---------- 分块 ----------
+	// ---------- 分块（Markdown 标题感知 + 面包屑 + 重叠） ----------
 
 	/**
-	 * 段落感知分块：按空行切段，顺序合并到接近 maxChars；
-	 * 超过 hardLimit 的单段按句号/换行硬切。
+	 * 按结构分块：
+	 * 1. 识别 Markdown 标题（# ~ ######），用标题栈维护"面包屑"路径；
+	 * 2. 每个标题section内部按空行切段、顺序合并到 maxChars；
+	 * 3. 超过 hardLimit 的段落按句子硬切；相邻块之间保留 overlapChars 重叠；
+	 * 4. 每块正文前拼上面包屑（如 "JARVIS 团队手册 > 报销制度"），让块自带语义上下文。
+	 * 纯文本（无标题）退化为按段落合并。
 	 */
 	List<String> splitIntoChunks(String content) {
-		List<String> merged = new ArrayList<>();
+		int maxChars = properties.getChunk().getMaxChars();
+		List<String> result = new ArrayList<>();
+
+		Deque<String> path = new ArrayDeque<>();
+		StringBuilder section = new StringBuilder();
+		String breadcrumb = "";
+
+		String[] lines = content.split("\n", -1);
+		for (String line : lines) {
+			Matcher m = HEADING.matcher(line.strip());
+			if (m.matches()) {
+				// 遇到新标题：先落盘上一节，再更新标题栈
+				flushSection(result, breadcrumb, section.toString(), maxChars);
+				section.setLength(0);
+				int level = m.group(1).length();
+				String text = m.group(2).strip();
+				while (path.size() >= level) {
+					path.pollLast();
+				}
+				path.addLast(text);
+				breadcrumb = String.join(" > ", path);
+			}
+			else {
+				section.append(line).append('\n');
+			}
+		}
+		flushSection(result, breadcrumb, section.toString(), maxChars);
+		return result.stream().filter(s -> !s.isBlank()).toList();
+	}
+
+	/** 把一个 section 的正文切成长度合适的块并加入结果（含面包屑前缀） */
+	private void flushSection(List<String> result, String breadcrumb, String sectionText, int maxChars) {
+		String body = sectionText.strip();
+		if (body.isEmpty()) {
+			return;
+		}
+		String prefix = breadcrumb.isEmpty() ? "" : breadcrumb + "\n";
+		int budget = Math.max(120, maxChars - prefix.length());
+
+		int overlap = properties.getChunk().getOverlapChars();
 		StringBuilder current = new StringBuilder();
-		for (String paragraph : content.split("\\n\\s*\\n")) {
+		for (String piece : piecesOf(body)) {
+			if (current.length() > 0
+					&& current.length() + piece.length() + 1 > budget) {
+				result.add((prefix + current).strip());
+				// 新块以上一块的尾部开头，保持上下文连续
+				String tail = tailSentences(current.toString(), overlap);
+				current = new StringBuilder(tail);
+				if (!tail.isEmpty() && !tail.endsWith("\n")) {
+					current.append('\n');
+				}
+			}
+			if (current.length() > 0 && current.charAt(current.length() - 1) != '\n') {
+				current.append('\n');
+			}
+			current.append(piece);
+		}
+		if (current.length() > 0) {
+			result.add((prefix + current).strip());
+		}
+	}
+
+	/** 把正文拆成不超过 hardLimit 的"段/句级"碎片 */
+	private List<String> piecesOf(String body) {
+		RagProperties.Chunk cfg = properties.getChunk();
+		List<String> pieces = new ArrayList<>();
+		for (String paragraph : body.split("\\n\\s*\\n")) {
 			String p = paragraph.strip();
 			if (p.isEmpty()) {
 				continue;
 			}
-			for (String piece : hardSplit(p)) {
-				if (current.length() > 0
-						&& current.length() + piece.length() + 1 > properties.getChunk().getMaxChars()) {
-					merged.add(current.toString());
-					current = new StringBuilder();
-				}
-				if (current.length() > 0) {
-					current.append('\n');
-				}
-				current.append(piece);
+			if (p.length() <= cfg.getHardLimit()) {
+				pieces.add(p);
+				continue;
 			}
-		}
-		if (current.length() > 0) {
-			merged.add(current.toString());
-		}
-		return merged;
-	}
-
-	/** 超长段落按句末标点/换行硬切到 hardLimit 以内 */
-	private List<String> hardSplit(String paragraph) {
-		int hardLimit = properties.getChunk().getHardLimit();
-		if (paragraph.length() <= hardLimit) {
-			return List.of(paragraph);
-		}
-		List<String> pieces = new ArrayList<>();
-		StringBuilder piece = new StringBuilder();
-		for (String sentence : paragraph.split("(?<=[。！？；.!?\n])")) {
-			if (piece.length() + sentence.length() > hardLimit && piece.length() > 0) {
-				pieces.add(piece.toString());
-				piece = new StringBuilder();
+			// 超长段落按句末标点/换行硬切
+			StringBuilder piece = new StringBuilder();
+			for (String sentence : p.split("(?<=[。！？；.!?\n])")) {
+				if (piece.length() + sentence.length() > cfg.getHardLimit() && piece.length() > 0) {
+					pieces.add(piece.toString().strip());
+					piece.setLength(0);
+				}
+				piece.append(sentence);
 			}
-			piece.append(sentence);
-		}
-		if (piece.length() > 0) {
-			pieces.add(piece.toString());
+			if (piece.length() > 0) {
+				pieces.add(piece.toString().strip());
+			}
 		}
 		return pieces;
+	}
+
+	/** 取文本末尾约 maxChars 的内容，并尽量从句子边界开始 */
+	private String tailSentences(String text, int maxChars) {
+		if (maxChars <= 0 || text.length() <= maxChars) {
+			return maxChars <= 0 ? "" : text;
+		}
+		String tail = text.substring(text.length() - maxChars);
+		int idx = tail.indexOf('。');
+		if (idx < 0) {
+			idx = tail.indexOf('\n');
+		}
+		return idx >= 0 && idx < tail.length() - 1 ? tail.substring(idx + 1) : tail;
 	}
 
 	private String defaultTitle(String fileName, String content) {
@@ -251,6 +339,115 @@ public class KnowledgeService {
 		// 取第一行作为标题（截断到 50 字符）
 		String firstLine = content.split("\\R", 2)[0];
 		return firstLine.length() > 50 ? firstLine.substring(0, 50) : firstLine;
+	}
+
+	// ---------- HTML 清洗 ----------
+
+	/**
+	 * 剥离内嵌 HTML，只保留可见文本：
+	 * script/style 整块删除；块级标签转行；其余标签删除；解码常见实体。
+	 */
+	String stripHtml(String input) {
+		if (!input.contains("<")) {
+			return input;
+		}
+		String out = input.replaceAll("(?is)<(script|style)[^>]*>.*?</\\1\\s*>", " ");
+		out = out.replaceAll("(?i)<br\\s*/?>", "\n");
+		out = out.replaceAll("(?is)</(p|div|li|tr|h[1-6]|section|article|table|ul|ol|blockquote)>", "\n");
+		out = out.replaceAll("(?is)<[^>]+>", "");
+		out = out.replace("&nbsp;", " ")
+				.replace("&amp;", "&")
+				.replace("&lt;", "<")
+				.replace("&gt;", ">")
+				.replace("&quot;", "\"")
+				.replace("&#39;", "'")
+				.replace("&lpar;", "(")
+				.replace("&rpar;", ")");
+		out = out.replaceAll("[ \\t\\u00a0]+", " ");
+		out = out.replaceAll(" *\\n *", "\n");
+		out = out.replaceAll("\\n{3,}", "\n\n");
+		return out.strip();
+	}
+
+	// ---------- 混合评分 ----------
+
+	/**
+	 * 词面重合度（0~1）：查询分词后统计在文本中的命中比例。
+	 * 中文按相邻双字（bigram），英文/数字按词元；能兜住"向量不敏感的精确词"
+	 * （产品名、人名、型号、缩写等）。
+	 */
+	double lexicalScore(Set<String> queryTerms, String text) {
+		if (queryTerms.isEmpty() || text == null || text.isEmpty()) {
+			return 0;
+		}
+		String lower = text.toLowerCase(Locale.ROOT);
+		int hit = 0;
+		for (String term : queryTerms) {
+			if (lower.contains(term)) {
+				hit++;
+			}
+		}
+		return (double) hit / queryTerms.size();
+	}
+
+	/**
+	 * 查询分词：中文相邻双字 + 英文/数字词元，去重。
+	 * 例："出差吃饭一天补多少钱" → [出差, 差吃, 吃饭, 饭一, 一天, 天补, 补多, 多少, 少钱]
+	 * 例："bge-m3 是什么" → [bge, m3, 是什么]
+	 */
+	Set<String> tokenize(String query) {
+		Set<String> terms = new LinkedHashSet<>();
+		String normalized = query.toLowerCase(Locale.ROOT);
+		StringBuilder ascii = new StringBuilder();
+		StringBuilder cjk = new StringBuilder();
+
+		flushAscii(ascii, terms);
+		for (int i = 0; i < normalized.length(); i++) {
+			char c = normalized.charAt(i);
+			if (Character.isLetterOrDigit(c) && c < 128) {
+				ascii.append(c);
+			}
+			else {
+				flushAscii(ascii, terms);
+				if (isCjk(c)) {
+					cjk.append(c);
+				}
+				else {
+					flushCjk(cjk, terms);
+				}
+			}
+		}
+		flushAscii(ascii, terms);
+		flushCjk(cjk, terms);
+		return terms;
+	}
+
+	private void flushAscii(StringBuilder ascii, Set<String> terms) {
+		if (ascii.length() >= 2) {
+			terms.add(ascii.toString());
+		}
+		ascii.setLength(0);
+	}
+
+	private void flushCjk(StringBuilder cjk, Set<String> terms) {
+		String s = cjk.toString();
+		if (s.length() == 1) {
+			terms.add(s);
+		}
+		else {
+			for (int i = 0; i < s.length() - 1; i++) {
+				terms.add(s.substring(i, i + 2));
+			}
+		}
+		cjk.setLength(0);
+	}
+
+	private boolean isCjk(char c) {
+		Character.UnicodeBlock block = Character.UnicodeBlock.of(c);
+		return block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+				|| block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+				|| block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_B
+				|| block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS;
 	}
 
 	// ---------- 向量工具 ----------

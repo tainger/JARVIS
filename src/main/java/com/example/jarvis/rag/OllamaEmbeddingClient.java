@@ -7,6 +7,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -40,17 +41,33 @@ public class OllamaEmbeddingClient {
 
 	/**
 	 * 批量向量化一组文本，返回与输入顺序一致的向量列表。
-	 * 请求携带 keep_alive 让模型常驻内存，避免空闲卸载后冷加载超时。
+	 * 内部按 batchSize 拆分为多个小批次请求：
+	 * - CPU 推理约 6s/条，大批次会撞超时墙；
+	 * - 小批次让每次请求耗时可控，失败也能定位到具体批次。
+	 * 每个请求携带 keep_alive 让模型常驻内存，避免空闲卸载后冷加载超时。
 	 */
 	public List<float[]> embed(List<String> texts) {
 		if (texts.isEmpty()) {
 			return List.of();
 		}
 		RagProperties.Embedding cfg = properties.getEmbedding();
+		int batchSize = Math.max(1, cfg.getBatchSize());
+		List<float[]> result = new ArrayList<>(texts.size());
+		for (int from = 0; from < texts.size(); from += batchSize) {
+			List<String> batch = texts.subList(from, Math.min(from + batchSize, texts.size()));
+			result.addAll(embedBatch(batch, cfg));
+			if (from + batchSize < texts.size()) {
+				log.debug("Ollama embedding 进度：{}/{}", result.size(), texts.size());
+			}
+		}
+		return result;
+	}
+
+	private List<float[]> embedBatch(List<String> batch, RagProperties.Embedding cfg) {
 		try {
 			String body = objectMapper.writeValueAsString(Map.of(
 					"model", cfg.getModel(),
-					"input", texts,
+					"input", batch,
 					"keep_alive", cfg.getKeepAlive()));
 			HttpRequest request = HttpRequest.newBuilder()
 					.uri(URI.create(cfg.getBaseUrl() + "/api/embed"))
@@ -66,8 +83,8 @@ public class OllamaEmbeddingClient {
 			}
 			Map<?, ?> result = objectMapper.readValue(response.body(), Map.class);
 			Object embeddings = result.get("embeddings");
-			if (!(embeddings instanceof List<?> list)) {
-				throw new IllegalStateException("Ollama embedding 响应缺少 embeddings 字段");
+			if (!(embeddings instanceof List<?> list) || list.size() != batch.size()) {
+				throw new IllegalStateException("Ollama embedding 响应缺少 embeddings 字段或条数不匹配");
 			}
 			return list.stream()
 					.map(item -> toVector((List<?>) item))
@@ -76,7 +93,8 @@ public class OllamaEmbeddingClient {
 		catch (HttpTimeoutException e) {
 			throw new IllegalStateException(
 					"Ollama 向量化请求超时（>%ds）。通常是模型冷加载过慢或 Ollama 忙碌，"
-							+ "可增大 rag.embedding.timeout-seconds 后重试：%s".formatted(cfg.getTimeoutSeconds(), e.getMessage()), e);
+							+ "可增大 rag.embedding.timeout-seconds 或调小 rag.embedding.batch-size 后重试：%s"
+									.formatted(cfg.getTimeoutSeconds(), e.getMessage()), e);
 		}
 		catch (IOException e) {
 			throw new IllegalStateException(
