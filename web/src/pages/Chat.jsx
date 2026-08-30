@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Card, Input, Space, Spin, Tag, Typography } from 'antd'
-import { ClearOutlined, LoadingOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
+import { Alert, Button, Card, Drawer, Input, Space, Spin, Tag, Typography } from 'antd'
+import { ClearOutlined, FileTextOutlined, LoadingOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { streamChat } from '../api/client'
+import { knowledgeApi, streamChat } from '../api/client'
 import { BRAND, CLAY, CLAY_SHADOW } from '../theme'
 
 const { TextArea } = Input
@@ -29,9 +29,26 @@ export default function Chat() {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState('')
+  const [viewingDoc, setViewingDoc] = useState(null) // { id, title }
+  const [docContent, setDocContent] = useState('')
+  const [docLoading, setDocLoading] = useState(false)
   const abortRef = useRef(null)
   const bottomRef = useRef(null)
   const listRef = useRef(null)
+
+  const openSourceDoc = async (source) => {
+    setViewingDoc({ id: source.documentId, title: source.documentTitle })
+    setDocContent('')
+    setDocLoading(true)
+    try {
+      const doc = await knowledgeApi.get(source.documentId)
+      setDocContent(doc.content || '（文档内容为空）')
+    } catch (e) {
+      setDocContent('加载文档失败：' + (e.message || '未知错误'))
+    } finally {
+      setDocLoading(false)
+    }
+  }
 
   const scrollToBottom = () => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -214,7 +231,7 @@ export default function Chat() {
                     ) : (
                       <Spin indicator={<LoadingOutlined spin />} size="small" />
                     )}
-                    <SourceList sources={msg.sources} />
+                    <SourceList sources={msg.sources} onOpenDoc={openSourceDoc} />
                   </div>
                 </div>
               ),
@@ -270,15 +287,41 @@ export default function Chat() {
           </Button>
         )}
       </div>
+
+      <Drawer
+        title={
+          <Space>
+            <span className="clay-icon-box" style={{ width: 32, height: 32, fontSize: 16, background: CLAY.purpleTint }}>
+              📄
+            </span>
+            <span style={{ fontWeight: 800 }}>{viewingDoc?.title}</span>
+          </Space>
+        }
+        placement="right"
+        width={640}
+        open={!!viewingDoc}
+        onClose={() => setViewingDoc(null)}
+        styles={{ body: { padding: 20 } }}
+      >
+        {docLoading ? (
+          <div style={{ textAlign: 'center', marginTop: 60 }}>
+            <Spin indicator={<LoadingOutlined spin />} />
+          </div>
+        ) : (
+          <div className="chat-markdown">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{docContent}</ReactMarkdown>
+          </div>
+        )}
+      </Drawer>
     </Card>
   )
 }
 
 /**
  * AI 回答下方的知识库来源卡片：与回答中的 [n] 编号一一对应，
- * 点击展开片段摘要原文。
+ * 点击卡片展开片段摘要；点"查看原文"弹出完整文档抽屉回溯。
  */
-function SourceList({ sources }) {
+function SourceList({ sources, onOpenDoc }) {
   const [openRef, setOpenRef] = useState(null)
   if (!sources || sources.length === 0) return null
   return (
@@ -301,14 +344,28 @@ function SourceList({ sources }) {
               lineHeight: 1.5,
             }}
           >
-            <Space size={6} wrap>
-              <span style={{ fontWeight: 800 }}>
-                [{s.ref}] {s.documentTitle}
-              </span>
-              <span style={{ color: 'rgba(0,0,0,0.45)' }}>片段 {s.seq}</span>
-              <Tag style={{ background: '#fff', color: CLAY.mint, fontWeight: 800, borderRadius: 999 }}>
-                {(s.score * 100).toFixed(0)}%
-              </Tag>
+            <Space size={6} wrap style={{ width: '100%', justifyContent: 'space-between' }}>
+              <Space size={6} wrap>
+                <span style={{ fontWeight: 800 }}>
+                  [{s.ref}] {s.documentTitle}
+                </span>
+                <span style={{ color: 'rgba(0,0,0,0.45)' }}>片段 {s.seq}</span>
+                <Tag style={{ background: '#fff', color: CLAY.mint, fontWeight: 800, borderRadius: 999 }}>
+                  {(s.score * 100).toFixed(0)}%
+                </Tag>
+              </Space>
+              <Button
+                type="link"
+                size="small"
+                icon={<FileTextOutlined />}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onOpenDoc?.(s)
+                }}
+                style={{ padding: 0, height: 22, fontWeight: 700 }}
+              >
+                查看原文
+              </Button>
             </Space>
             {openRef === s.ref && (
               <div
