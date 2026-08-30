@@ -8,6 +8,16 @@ import { BRAND, CLAY, CLAY_SHADOW } from '../theme'
 
 const { TextArea } = Input
 
+/**
+ * 归一化模型输出的 Markdown：模型偶尔输出 "###标题"、"1.条目" 这种贴身写法，
+ * CommonMark 要求 #/数字后有空格才认作标题/列表项，这里统一补上空格。
+ */
+function normalizeMarkdown(text) {
+  return text
+    .replace(/^(#{1,6})(?=[^#\s])/gm, '$1 ')
+    .replace(/^(\s*)(\d+)\.(?=\S)/gm, '$1$2. ')
+}
+
 const suggestions = [
   '帮我列出所有任务',
   '创建一个新任务：准备周报',
@@ -197,7 +207,9 @@ export default function Chat() {
                   >
                     {msg.content ? (
                       <div className="chat-markdown">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {normalizeMarkdown(msg.content)}
+                        </ReactMarkdown>
                       </div>
                     ) : (
                       <Spin indicator={<LoadingOutlined spin />} size="small" />
