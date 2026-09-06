@@ -55,7 +55,8 @@ export default function Chat() {
   const [viewingDoc, setViewingDoc] = useState(null) // { id, title }
   const [docContent, setDocContent] = useState('')
   const [docLoading, setDocLoading] = useState(false)
-  const [dislike, setDislike] = useState(null) // { question, answer } 👎 提交候选池
+  const [dislike, setDislike] = useState(null) // { answer } 👎 提交候选池
+  const [dislikeQuestion, setDislikeQuestion] = useState('') // 可编辑的问题
   const [dislikeNote, setDislikeNote] = useState('')
   const [dislikeSubmitting, setDislikeSubmitting] = useState(false)
 
@@ -127,13 +128,16 @@ export default function Chat() {
     setSidebarOpen(false)
     try {
       const data = await conversationApi.get(convId, 0, 100)
-      const history = (data.messages || []).map((m) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        sources: [],
-        trace: [],
-      }))
+      const history = (data.messages || [])
+        .slice()
+        .reverse()
+        .map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          sources: [],
+          trace: [],
+        }))
       // 加载推理轨迹（可能为空——旧对话没有 trace）
       try {
         const traces = await traceApi.list(convId)
@@ -314,19 +318,33 @@ export default function Chat() {
     setError('')
   }
 
+  /** 从当前消息向前找最近一条用户消息，作为 👎 提交的问题 */
+  const findPrevUserMessage = (index) => {
+    for (let j = index - 1; j >= 0; j--) {
+      if (messages[j]?.role === 'user') return messages[j].content || ''
+    }
+    return ''
+  }
+
   /** 👎 提交候选池：问题 + 备注 + 回答摘要，评测中心 triage 后转正进标注集 */
   const submitDislike = async () => {
     if (!dislike) return
+    const question = dislikeQuestion.trim()
+    if (!question) {
+      message.warning('请输入问题内容后再提交')
+      return
+    }
     setDislikeSubmitting(true)
     try {
       await evalApi.submitCandidate({
-        question: dislike.question,
+        question,
         note: dislikeNote.trim() || null,
-        source: 'chat',
+        source: 'chat_dislike',
         chatRef: dislike.answer.slice(0, 200),
       })
       message.success('已提交候选池，可在评测中心转正为评测用例')
       setDislike(null)
+      setDislikeQuestion('')
       setDislikeNote('')
     } catch (e) {
       // 409（重复）等信息已由拦截器弹出
@@ -691,9 +709,12 @@ export default function Chat() {
                             <Button
                               type="text"
                               size="small"
-                              onClick={() =>
-                                setDislike({ question: messages[i - 1]?.content || '', answer: msg.content })
-                              }
+                              onClick={() => {
+                                const q = findPrevUserMessage(i)
+                                setDislike({ answer: msg.content })
+                                setDislikeQuestion(q)
+                                setDislikeNote('')
+                              }}
                               style={{ color: CLAY.inkSoft, fontWeight: 700, fontSize: 12 }}
                             >
                               👎 回答不满意
@@ -795,6 +816,7 @@ export default function Chat() {
       <Modal
         title="👎 提交到评测候选池"
         open={!!dislike}
+        destroyOnClose
         onOk={submitDislike}
         confirmLoading={dislikeSubmitting}
         onCancel={() => {
@@ -805,9 +827,18 @@ export default function Chat() {
       >
         {dislike && (
           <>
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-              问题：{dislike.question}
-            </Typography.Paragraph>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, color: '#8c8c8c', marginBottom: 6 }}>
+                问题（可修改）：
+              </div>
+              <Input
+                value={dislikeQuestion}
+                onChange={(e) => setDislikeQuestion(e.target.value)}
+                placeholder="请输入用户的问题"
+                maxLength={200}
+                allowClear
+              />
+            </div>
             <TextArea
               value={dislikeNote}
               onChange={(e) => setDislikeNote(e.target.value)}

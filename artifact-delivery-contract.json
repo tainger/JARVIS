@@ -1,0 +1,35 @@
+{
+  "outputs": [
+    {
+      "path": "/Users/rocky/study/profile/Markdown-Resume/repo/JARVIS/docs/rag-eval-system/rag-eval-system.html",
+      "type": "html",
+      "editable": true
+    }
+  ],
+  "source_files": [
+    "/Users/rocky/study/profile/Markdown-Resume/repo/JARVIS/openspec/changes/add-rag-eval-system/proposal.md",
+    "/Users/rocky/study/profile/Markdown-Resume/repo/JARVIS/openspec/changes/add-rag-eval-system/design.md",
+    "/Users/rocky/study/profile/Markdown-Resume/repo/JARVIS/openspec/changes/add-rag-eval-system/tasks.md"
+  ],
+  "acceptance_items": [
+    {
+      "quote": "生成文档记录这个RAG评测系统，方便面试讲",
+      "expected": "HARD | HTML文档包含完整的RAG评测系统介绍，涵盖设计思路、架构、指标、闭环流程、工程化实践等面试要点",
+      "final_check": "PASS | 文档包含：系统概述（为什么要做评测系统）、架构设计（五大能力模块+整体流程图）、评测指标（检索层5大指标+生成层指标+LLM-as-Judge+分层报告）、候选池闭环（完整流程+表设计+关键细节）、三级触发机制（本地/pre-push/CI）、前端评测中心（4区块+技术选型+后端API）、踩坑经验（5个坑与解法）、面试话术（每章都有面试话术提示）"
+    },
+    {
+      "quote": "方便面试讲",
+      "expected": "HARD | 文档包含面试官视角的讲解思路和常见面试问题回答",
+      "final_check": "PASS | 文档包含7处面试话术提示（💡面试话术）、7道常见面试问题及回答、一句话总结、面试技巧（用数字说话）等面试导向内容"
+    },
+    {
+      "quote": "中文",
+      "expected": "HARD | 文档全部使用中文",
+      "final_check": "PASS | 文档主体全部为中文，包括章节标题、正文、表格、面试话术等"
+    }
+  ],
+  "claims": [],
+  "target_scope": {
+    "required": false
+  }
+}
