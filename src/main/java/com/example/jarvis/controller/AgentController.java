@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import com.example.jarvis.dto.ChatRequest;
 import com.example.jarvis.dto.ChatResponse;
@@ -14,6 +15,7 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.model.exception.AuthenticationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,18 +76,41 @@ public class AgentController {
 		jarvisAgent.stream(List.of(msg), options).subscribe(
 				event -> sendDelta(emitter, event),
 				error -> sendErrorAndComplete(emitter, error),
-				emitter::complete);
+				() -> {
+					// 发送显式 done 帧，确保前端 reader 能正常结束循环（SseEmitter.complete() 不保证前端 fetch reader 立即收到 done 信号）
+					try {
+						emitter.send(SseEmitter.event().name("done").data("{}"));
+					} catch (Exception ignored) {
+					}
+					emitter.complete();
+				});
 		return emitter;
 	}
 
 	private void sendDelta(SseEmitter emitter, Event event) {
 		try {
-			String text = event.getMessage().getTextContent();
 			if (event.getType() == EventType.AGENT_RESULT) {
-				emitter.complete();
+				// 不在此处 complete，交给 onComplete 回调统一发送 done 帧后关闭
 				return;
 			}
-			if (!event.isLast() && text != null && !text.isEmpty()) {
+			if (event.isLast()) {
+				return;
+			}
+			Msg msg = event.getMessage();
+			// ThinkingBlock：模型内部思考过程（如 DeepSeek-R1 的 reasoning_content）
+			var thinkingBlocks = msg.getContentBlocks(ThinkingBlock.class);
+			if (!thinkingBlocks.isEmpty()) {
+				String thinking = thinkingBlocks.stream()
+						.map(ThinkingBlock::getThinking)
+						.filter(t -> t != null && !t.isEmpty())
+						.collect(Collectors.joining());
+				if (!thinking.isEmpty()) {
+					emitter.send(SseEmitter.event().name("reasoning").data(thinking));
+				}
+			}
+			// TextBlock：正常回复文本（ReAct 的 Thought + 最终回复）
+			String text = msg.getTextContent();
+			if (text != null && !text.isEmpty()) {
 				emitter.send(SseEmitter.event().data(text));
 			}
 		} catch (Exception e) {

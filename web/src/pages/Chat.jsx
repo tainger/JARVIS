@@ -77,12 +77,20 @@ export default function Chat() {
 
     try {
       let acc = ''
+      let reasoningAcc = ''
       for await (const { event, data } of streamChat(content, controller.signal)) {
         if (event === 'message') {
           acc += data
           setMessages((prev) => {
             const next = [...prev]
             next[next.length - 1] = { ...next[next.length - 1], content: acc }
+            return next
+          })
+        } else if (event === 'reasoning') {
+          reasoningAcc += data
+          setMessages((prev) => {
+            const next = [...prev]
+            next[next.length - 1] = { ...next[next.length - 1], reasoning: reasoningAcc }
             return next
           })
         } else if (event === 'sources') {
@@ -105,6 +113,8 @@ export default function Chat() {
             // 保留原始文本
           }
           throw new Error(msg)
+        } else if (event === 'done') {
+          break
         }
       }
     } catch (e) {
@@ -246,6 +256,26 @@ export default function Chat() {
                       boxShadow: CLAY_SHADOW.raised,
                     }}
                   >
+                    {msg.reasoning && (
+                      <details
+                        style={{
+                          marginBottom: 8,
+                          border: 'none',
+                          background: 'rgba(99,102,241,0.06)',
+                          borderRadius: 12,
+                          padding: '8px 12px',
+                          fontSize: 13,
+                          color: CLAY.inkSoft,
+                        }}
+                      >
+                        <summary style={{ cursor: 'pointer', fontWeight: 700, userSelect: 'none' }}>
+                          💭 思考过程
+                        </summary>
+                        <div style={{ marginTop: 6, whiteSpace: 'pre-wrap', opacity: 0.85 }}>
+                          {msg.reasoning}
+                        </div>
+                      </details>
+                    )}
                     {msg.content ? (
                       <div className="chat-markdown">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
