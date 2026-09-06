@@ -1,6 +1,6 @@
 # JARVIS 简易 RAG：工作流程、原理、缺点与演进路线
 
-> 更新时间：2026-08-30。
+> 更新时间：2026-09-06。
 > 范围：当前已落地的 RAG 实现（`src/main/java/com/example/jarvis/rag/`）。
 > 关联文档：[setup-guide.md](setup-guide.md)（启动与配置）、[llm-wiki-research.md](llm-wiki-research.md)（下一代知识库技术调研）。
 
@@ -131,11 +131,86 @@ embedding 对**长文本会发生语义稀释**（一段 2000 字混了三个主
 
 | # | 改造 | 解决 | 说明 |
 |---|---|---|---|
-| 6 | 重排器 | 缺点5 | 向量+BM25 召回 Top-50 → `bge-reranker-v2-m3` 精排取 Top-4（可继续跑 Ollama） |
+| 6 | 重排器 | 缺点5 | 粗排（向量+BM25）召回 Top-20 → cross-encoder `bge-reranker-v2-m3` 精排取 Top-4。⚠️ Ollama 不原生支持 reranker（`/api/embed` 只做 embedding），部署见下方专项说明 |
 | 7 | 向量存储外置 | 缺点4 | MySQL 管元数据 + Qdrant（HNSW，p99 ~8ms）管向量；或迁 PostgreSQL+pgvector 保单库 |
 | 8 | 文档解析 | 缺点6 | Apache Tika/PDFBox 接 PDF/Word；表格按结构切块 |
 | 9 | Parent-Child 检索 | 效果 | 小块（精准匹配）命中后返回父章节（完整上下文）——"检索要细、喂模型要粗" |
 | 10 | 元数据过滤 | — | 按文档/标签/时间过滤检索范围；顺带补文档级权限 |
+
+### 重排器（rerank）专项说明
+
+> 本节展开 Phase 2 #6 的 rerank 方案：为什么缺、当前为什么够用、什么时候值得加、怎么落地。
+
+#### 为什么说"缺 rerank 但当前够用"
+
+当前检索链路用 `0.75×cosine + 0.25×词面重合` 的混合评分直接取 Top-K 注入，本质是**粗排（bi-encoder）**——query 和 chunk 独立编码，靠向量空间距离近似语义相似度，没有交叉注意力。固有误判：
+
+| 误判类型 | 例子 |
+|---|---|
+| 语义相近但不相关 | query "报销流程" 命中"产品开发流程"块，因都含"流程"且向量空间相近 |
+| 精确词命中但语义弱 | query "bge-m3 模型" 命中大量含"模型"但不相关的块 |
+
+**rerank 的作用**：召回 Top-20 候选后，用 cross-encoder 把 `[query, chunk]` 拼在一起联合编码，模型能直接"看到"两者的交互，精度远高于独立编码的粗排。
+
+当前能接受的原因：
+- **规模小**：仅 36 个 chunk，全量遍历评分，误判空间小
+- **词面分兜底**：0.25 的 lexical score 已在做"穷人版精排"
+- **双阈值门控**：`injectScore` 卡 Top1、`minScore` 过滤弱相关，噪声挡在注入前
+- **Agent 工具入口**：弱相关场景不注入，交给 ReAct Agent 自主判断
+
+#### 触发条件（何时引入）
+
+| 条件 | 说明 |
+|---|---|
+| chunk 数量 > 200 | 粗排误判率显著上升，Top-4 被噪声挤占 |
+| 评测 recall@4 下降 | 用现有 `/eval` 标注集量化，精度跌破基线（当前 1.000）再动 |
+| query 歧义度高 | 短 query、专业术语、一词多义场景增多 |
+
+> 原则：**以评测数据驱动，不凭感觉加**。当前 36 chunk 规模下混合评分 + 双阈值已覆盖 rerank 大部分收益，提前引入只会增加部署复杂度。
+
+#### 目标架构（三段式）
+
+```
+当前：  query → 粗排(混合评分) ──────────────► Top-4 → 注入
+                                        ↑ 直接用粗排结果
+
+目标：  query → 粗排(向量+BM25) → Top-20 → rerank精排 → Top-4 → 注入
+                                              ↑
+                                       cross-encoder 联合打分
+```
+
+#### 部署方案选型（关键坑）
+
+> ⚠️ Ollama **不原生支持 reranker 模型**（`/api/embed` 只做 embedding，reranker 需要 query+chunk 联合编码）。不能像 bge-m3 那样 `ollama pull` 就用。
+
+| 方案 | 实现 | 优点 | 缺点 |
+|---|---|---|---|
+| **A. ONNX Runtime 内嵌** | JVM 内引入 onnxruntime 依赖，加载 bge-reranker-v2-m3 的 onnx 模型（~600MB） | 零外部服务，延迟低 | 需引入新 native 依赖，模型冷加载慢 |
+| **B. 独立 rerank HTTP 服务** | Python FastAPI + sentence-transformers 跑 reranker，暴露 `/rerank` 接口 | 技术成熟，模型升级独立 | 多一个服务要运维，CPU 推理每 query ~1-2s |
+| **C. Qdrant rerank API** | 向量库换 Qdrant，其内置 rerank API（需在 Phase 2 #7 落地后） | 架构最简洁，与向量库统一 | 强依赖 Qdrant，且 Qdrant rerank 默认模型不一定是 bge 系列 |
+
+推荐 **方案 A（ONNX 内嵌）**：与项目"零外部服务优先"的风格一致，且 rerank 只对 Top-20 候选打分，计算量可控。
+
+#### 实现路径（代码改动点）
+
+改动集中在 `KnowledgeService`，接口契约不变：
+
+```java
+// KnowledgeService.search() 改造示意
+public List<SearchHit> search(String query, Integer topK) {
+    // 1. 粗排：现有混合评分，召回扩大到 topK * 5（如 Top-20）
+    List<SearchHit> coarse = coarseSearch(query, topK * 5);
+    // 2. 精排：cross-encoder 对 query + 每个 chunk 联合打分
+    List<SearchHit> reranked = rerankClient.rerank(query, coarse);
+    // 3. 取最终 Top-K
+    return reranked.stream().limit(k).toList();
+}
+```
+
+- 新增 `RerankClient` 接口 + `OnnxRerankClient` 实现（方案 A）
+- `buildInjection()` 无需改动，消费 `search()` 结果不变
+- 配置项 `rag.rerank.enabled` 开关，可灰度上线对比评测
+- 评测系统（`/eval`）天然支持 A/B：开关切换跑两次归档，diff 对比 recall@K 变化
 
 ### Phase 3：形态跃迁（对齐 llm-wiki-research.md）
 
