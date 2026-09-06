@@ -39,4 +39,9 @@ public interface MessageMapper {
 	 */
 	int deleteByConversationId(@Param("conversationId") Long conversationId);
 
+	/**
+	 * 查询用户最近 N 条消息（跨会话，用于画像提取）
+	 */
+	List<Message> findRecentByUserId(@Param("userId") Long userId, @Param("limit") int limit);
+
 }

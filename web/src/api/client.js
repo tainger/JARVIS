@@ -165,6 +165,15 @@ export const knowledgeHealthApi = {
 }
 
 // ======================================================================
+// 用户画像 API
+// ======================================================================
+export const profileApi = {
+  get: () => http.get('/profile').then((r) => r.data),
+  update: (data) => http.put('/profile', data).then((r) => r.data),
+  extract: () => http.post('/profile/extract').then((r) => r.data),
+}
+
+// ======================================================================
 // RAG 评测中心 API（只读历史 + 候选池）
 // ======================================================================
 export const evalApi = {

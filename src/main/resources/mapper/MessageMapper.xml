@@ -55,4 +55,17 @@
 		DELETE FROM message WHERE conversation_id = #{conversationId}
 	</delete>
 
+	<!-- 查询用户最近 N 条消息（跨会话，用于画像提取） -->
+	<select id="findRecentByUserId" resultMap="MessageResultMap">
+		SELECT id, conversation_id, user_id, role, content, token_count, created_at
+		FROM (
+			SELECT id, conversation_id, user_id, role, content, token_count, created_at
+			FROM message
+			WHERE user_id = #{userId}
+			ORDER BY created_at DESC
+			LIMIT #{limit}
+		) t
+		ORDER BY t.created_at ASC
+	</select>
+
 </mapper>

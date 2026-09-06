@@ -13,6 +13,7 @@ import KnowledgeHealth from './pages/KnowledgeHealth'
 import EvalCenter from './pages/EvalCenter'
 import AgentTraces from './pages/AgentTraces'
 import ConversationAnalytics from './pages/ConversationAnalytics'
+import UserProfilePage from './pages/UserProfilePage'
 import { authStore, authApi } from './api/client'
 
 /**
@@ -95,6 +96,7 @@ export default function App() {
         <Route path="eval" element={<EvalCenter />} />
         <Route path="traces" element={<AgentTraces />} />
         <Route path="analytics" element={<ConversationAnalytics />} />
+        <Route path="profile" element={<UserProfilePage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

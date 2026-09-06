@@ -17,6 +17,7 @@ import {
   BugOutlined,
   BarChartOutlined,
   HeartOutlined,
+  SolutionOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BRAND, CLAY, CLAY_SHADOW, LAYOUT, RADIUS } from '../theme'
@@ -36,6 +37,7 @@ const menuItems = [
   { key: '/eval', icon: <ExperimentOutlined />, label: '评测中心' },
   { key: '/traces', icon: <BugOutlined />, label: '推理轨迹' },
   { key: '/analytics', icon: <BarChartOutlined />, label: '对话分析' },
+  { key: '/profile', icon: <SolutionOutlined />, label: '个人画像' },
 ]
 
 // 漂浮黏土装饰：低饱和圆块，均匀铺在内容后面，营造"软"的空间感

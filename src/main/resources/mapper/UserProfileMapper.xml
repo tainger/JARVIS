@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.jarvis.mapper.UserProfileMapper">
+
+    <resultMap id="UserProfileResultMap" type="com.example.jarvis.model.UserProfile">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="techStack" column="tech_stack"/>
+        <result property="frequentTopics" column="frequent_topics"/>
+        <result property="answerStyle" column="answer_style"/>
+        <result property="projectContext" column="project_context"/>
+        <result property="rawSummary" column="raw_summary"/>
+        <result property="conversationCount" column="conversation_count"/>
+        <result property="updatedAt" column="updated_at"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <select id="findByUserId" resultMap="UserProfileResultMap">
+        SELECT id, user_id, tech_stack, frequent_topics, answer_style,
+               project_context, raw_summary, conversation_count, updated_at, created_at
+        FROM user_profile
+        WHERE user_id = #{userId}
+    </select>
+
+    <insert id="insert">
+        INSERT INTO user_profile (user_id, tech_stack, frequent_topics, answer_style,
+                                  project_context, raw_summary, conversation_count)
+        VALUES (#{userId}, #{techStack}, #{frequentTopics}, #{answerStyle},
+                #{projectContext}, #{rawSummary}, #{conversationCount})
+    </insert>
+
+    <update id="update">
+        UPDATE user_profile
+        SET tech_stack = #{techStack},
+            frequent_topics = #{frequentTopics},
+            answer_style = #{answerStyle},
+            project_context = #{projectContext},
+            raw_summary = #{rawSummary}
+        WHERE user_id = #{userId}
+    </update>
+
+    <update id="incrementConversationCount">
+        UPDATE user_profile
+        SET conversation_count = conversation_count + 1
+        WHERE user_id = #{userId}
+    </update>
+
+</mapper>

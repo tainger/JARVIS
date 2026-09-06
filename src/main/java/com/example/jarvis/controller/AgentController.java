@@ -57,12 +57,14 @@ public class AgentController {
 
 	private final AgentScopeConfig agentScopeConfig;
 	private final com.example.jarvis.mapper.KnowledgeSearchLogMapper searchLogMapper;
+	private final com.example.jarvis.service.UserProfileService userProfileService;
 
 	public AgentController(AgentFactory agentFactory, ConversationService conversationService,
 			MessageMapper messageMapper, AgentTraceMapper agentTraceMapper,
 			KnowledgeService knowledgeService,
 			AgentScopeConfig agentScopeConfig,
-			com.example.jarvis.mapper.KnowledgeSearchLogMapper searchLogMapper) {
+			com.example.jarvis.mapper.KnowledgeSearchLogMapper searchLogMapper,
+			com.example.jarvis.service.UserProfileService userProfileService) {
 		this.agentFactory = agentFactory;
 		this.conversationService = conversationService;
 		this.messageMapper = messageMapper;
@@ -70,13 +72,14 @@ public class AgentController {
 		this.knowledgeService = knowledgeService;
 		this.agentScopeConfig = agentScopeConfig;
 		this.searchLogMapper = searchLogMapper;
+		this.userProfileService = userProfileService;
 	}
 
 	@PostMapping("/chat")
 	public ChatResponse chat(@RequestBody ChatRequest request) {
 		Long userId = currentUserId();
 		Conversation conversation = resolveConversation(userId, request.conversationId(), request.message());
-		ReActAgent agent = agentFactory.create(userId, conversation.getId(), buildSystemPrompt(request.mode()));
+		ReActAgent agent = agentFactory.create(userId, conversation.getId(), buildSystemPrompt(request.mode(), userId));
 		AugmentedInput input = augmentWithKnowledge(request.message());
 		Msg response = agent.call(Msg.builder().textContent(input.message()).build()).block();
 		// 持久化对话
@@ -122,7 +125,7 @@ public class AgentController {
 		}
 
 		// 4. 创建用户专属 Agent（内部加载短期记忆 + 绑定长期记忆）
-		ReActAgent agent = agentFactory.create(userId, conversation.getId(), buildSystemPrompt(request.mode()));
+		ReActAgent agent = agentFactory.create(userId, conversation.getId(), buildSystemPrompt(request.mode(), userId));
 
 		Msg msg = Msg.builder().textContent(input.message()).build();
 		// 扩展事件订阅：增加 TOOL_RESULT 以捕获工具调用/结果事件
@@ -160,6 +163,12 @@ public class AgentController {
 					if (conversation.getTitle() != null && "新对话".equals(conversation.getTitle())
 							&& messageMapper.countByConversationId(conversation.getId()) <= 2) {
 						conversationService.autoTitle(conversation.getId(), userMessage);
+					}
+					// 用户画像：递增对话计数，每 5 次异步触发提取
+					try {
+						userProfileService.onConversationComplete(userId);
+					} catch (Exception e) {
+						log.debug("画像计数更新失败（不影响对话）: {}", e.getMessage());
 					}
 					// 发送显式 done 帧
 					try {
@@ -235,18 +244,27 @@ public class AgentController {
 	 * 构建系统提示词：基础提示 + 模式特定提示。
 	 * 长期记忆由框架（LongTermMemoryMode.STATIC_CONTROL）自动 retrieve 注入。
 	 */
-	private String buildSystemPrompt(String mode) {
+	private String buildSystemPrompt(String mode, Long userId) {
 		String base = agentScopeConfig.getAgent().getSysPrompt();
-		if (!StringUtils.hasText(mode)) {
-			return base;
+		if (StringUtils.hasText(mode)) {
+			base = switch (mode) {
+				case "source-analysis" -> {
+					String prompt = agentScopeConfig.getAgent().getSourceAnalysisSysPrompt();
+					yield StringUtils.hasText(prompt) ? prompt : base;
+				}
+				default -> base;
+			};
 		}
-		return switch (mode) {
-			case "source-analysis" -> {
-				String prompt = agentScopeConfig.getAgent().getSourceAnalysisSysPrompt();
-				yield StringUtils.hasText(prompt) ? prompt : base;
+		// 注入用户画像
+		try {
+			var profile = userProfileService.getProfile(userId);
+			if (profile != null && profile.hasContent()) {
+				return base + profile.toPromptBlock();
 			}
-			default -> base;
-		};
+		} catch (Exception e) {
+			log.debug("用户画像注入失败（不影响对话）: userId={}, error={}", userId, e.getMessage());
+		}
+		return base;
 	}
 
 	/**
