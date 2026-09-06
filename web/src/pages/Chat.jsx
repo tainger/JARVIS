@@ -6,7 +6,6 @@ import {
   Dropdown,
   Drawer,
   Input,
-  Layout,
   List,
   Modal,
   Space,
@@ -31,7 +30,6 @@ import { conversationApi, evalApi, knowledgeApi, streamChat } from '../api/clien
 import { BRAND, CLAY, CLAY_SHADOW } from '../theme'
 
 const { TextArea } = Input
-const { Sider, Content } = Layout
 
 /**
  * 归一化模型输出的 Markdown：模型偶尔输出 "###标题"、"1.条目" 这种贴身写法，
@@ -400,24 +398,26 @@ export default function Chat() {
   )
 
   return (
-    <Layout style={{ height: 'calc(100vh - 156px)', background: 'transparent' }}>
+    <div style={{ display: 'flex', height: 'calc(100vh - 156px)', background: 'transparent' }}>
       {/* 桌面端侧边栏 */}
-      <Sider
-        width={260}
-        theme="light"
+      <div
+        className="chat-sider"
         style={{
+          width: 260,
+          flexShrink: 0,
           borderRadius: 16,
           marginRight: 16,
           overflow: 'hidden',
           border: `1px solid ${CLAY.border}`,
           boxShadow: CLAY_SHADOW.small,
+          background: '#fff',
         }}
-        className="chat-sider"
       >
         {sidebarContent}
-      </Sider>
+      </div>
 
-      <Content>
+      {/* 主聊天区：flex:1 + minWidth:0 防止内容撑破 */}
+      <div style={{ flex: 1, minWidth: 0, display: 'flex' }}>
         <Card
           title={
             <Space>
@@ -445,8 +445,17 @@ export default function Chat() {
               清空对话
             </Button>
           }
-          style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
-          styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 20 } }}
+          style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}
+          styles={{
+            body: {
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              padding: 20,
+              overflow: 'hidden',
+              minHeight: 0,
+            },
+          }}
         >
           <div
             ref={listRef}
@@ -621,7 +630,7 @@ export default function Chat() {
             )}
           </div>
         </Card>
-      </Content>
+      </div>
 
       {/* 移动端会话侧边栏抽屉 */}
       <Drawer
@@ -711,7 +720,7 @@ export default function Chat() {
           </div>
         )}
       </Drawer>
-    </Layout>
+    </div>
   )
 }
 
