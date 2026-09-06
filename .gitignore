@@ -41,3 +41,4 @@ backup/
 ### H2 文件库（知识库数据） ###
 .data/
 
+.DS_Store

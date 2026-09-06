@@ -14,6 +14,16 @@ public class KnowledgeDocument {
 
 	private int chunkCount;
 
+	private String status;
+
+	private String errorMessage;
+
+	private int chunkProgress;
+
+	private int chunkTotal;
+
+	private LocalDateTime embeddingStartedAt;
+
 	private LocalDateTime createdAt;
 
 	public Long getId() {
@@ -54,6 +64,46 @@ public class KnowledgeDocument {
 
 	public void setChunkCount(int chunkCount) {
 		this.chunkCount = chunkCount;
+	}
+
+	public String getStatus() {
+		return status;
+	}
+
+	public void setStatus(String status) {
+		this.status = status;
+	}
+
+	public String getErrorMessage() {
+		return errorMessage;
+	}
+
+	public void setErrorMessage(String errorMessage) {
+		this.errorMessage = errorMessage;
+	}
+
+	public int getChunkProgress() {
+		return chunkProgress;
+	}
+
+	public void setChunkProgress(int chunkProgress) {
+		this.chunkProgress = chunkProgress;
+	}
+
+	public int getChunkTotal() {
+		return chunkTotal;
+	}
+
+	public void setChunkTotal(int chunkTotal) {
+		this.chunkTotal = chunkTotal;
+	}
+
+	public LocalDateTime getEmbeddingStartedAt() {
+		return embeddingStartedAt;
+	}
+
+	public void setEmbeddingStartedAt(LocalDateTime embeddingStartedAt) {
+		this.embeddingStartedAt = embeddingStartedAt;
 	}
 
 	public LocalDateTime getCreatedAt() {

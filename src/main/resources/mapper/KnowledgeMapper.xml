@@ -8,6 +8,11 @@
 		<result property="fileName" column="file_name"/>
 		<result property="content" column="content"/>
 		<result property="chunkCount" column="chunk_count"/>
+		<result property="status" column="status"/>
+		<result property="errorMessage" column="error_message"/>
+		<result property="chunkProgress" column="chunk_progress"/>
+		<result property="chunkTotal" column="chunk_total"/>
+		<result property="embeddingStartedAt" column="embedding_started_at"/>
 		<result property="createdAt" column="created_at"/>
 	</resultMap>
 
@@ -21,7 +26,7 @@
 	</resultMap>
 
 	<sql id="DocumentColumns">
-		id, title, file_name, content, chunk_count, created_at
+		id, title, file_name, content, chunk_count, status, error_message, chunk_progress, chunk_total, embedding_started_at, created_at
 	</sql>
 
 	<sql id="ChunkColumns">
@@ -42,11 +47,52 @@
 		WHERE id = #{id}
 	</select>
 
+	<select id="findByStatus" parameterType="string" resultMap="DocumentResultMap">
+		SELECT
+		<include refid="DocumentColumns"/>
+		FROM knowledge_document
+		WHERE status = #{status}
+		ORDER BY id
+	</select>
+
 	<insert id="insertDocument" parameterType="com.example.jarvis.model.KnowledgeDocument"
 			useGeneratedKeys="true" keyProperty="id">
-		INSERT INTO knowledge_document (title, file_name, content, chunk_count)
-		VALUES (#{title}, #{fileName}, #{content}, #{chunkCount})
+		INSERT INTO knowledge_document (title, file_name, content, chunk_count, status, chunk_progress, chunk_total)
+		VALUES (#{title}, #{fileName}, #{content}, #{chunkCount}, #{status}, #{chunkProgress}, #{chunkTotal})
 	</insert>
+
+	<update id="updateStatus">
+		UPDATE knowledge_document
+		SET status = #{status}, error_message = #{errorMessage}
+		WHERE id = #{id}
+	</update>
+
+	<update id="claimForEmbedding">
+		UPDATE knowledge_document
+		SET status = 'embedding', embedding_started_at = NOW()
+		WHERE id = #{id} AND status = 'processing'
+	</update>
+
+	<update id="resetStuckEmbedding">
+		UPDATE knowledge_document
+		SET status = 'processing', embedding_started_at = NULL,
+		    error_message = CONCAT(IFNULL(error_message, ''), '; 执行超时已重置')
+		WHERE status = 'embedding'
+		  AND (embedding_started_at IS NULL
+		       OR embedding_started_at &lt; DATE_SUB(NOW(), INTERVAL #{timeoutMinutes} MINUTE))
+	</update>
+
+	<update id="updateChunkProgress">
+		UPDATE knowledge_document
+		SET chunk_progress = #{progress}
+		WHERE id = #{id}
+	</update>
+
+	<update id="updateChunkEmbedding">
+		UPDATE knowledge_chunk
+		SET embedding = #{embedding}, dim = #{dim}
+		WHERE document_id = #{documentId} AND seq = #{seq}
+	</update>
 
 	<delete id="deleteDocument" parameterType="long">
 		DELETE FROM knowledge_document

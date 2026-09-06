@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   App,
   Button,
@@ -7,6 +7,7 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Progress,
   Space,
   Statistic,
   Table,
@@ -51,9 +52,12 @@ export default function Knowledge() {
   const [viewing, setViewing] = useState(null)
 
   // 批量导入
-  const [batchFiles, setBatchFiles] = useState([]) // [{file, title, status, msg}]
+  const [batchFiles, setBatchFiles] = useState([])
   const [batchRunning, setBatchRunning] = useState(false)
   const [importTab, setImportTab] = useState('single')
+
+  // 轮询管理
+  const pollTimers = useRef({}) // {docId: intervalId}
 
   const loadData = useCallback(() => {
     setLoading(true)
@@ -61,6 +65,12 @@ export default function Knowledge() {
       .then(([list, s]) => {
         setDocs(list)
         setStats(s)
+        // 对 processing 状态的文档启动轮询
+        list.forEach((doc) => {
+          if (doc.status === 'processing' && !pollTimers.current[doc.id]) {
+            startPolling(doc.id)
+          }
+        })
       })
       .catch(() => message.error('加载知识库失败，请检查后端服务'))
       .finally(() => setLoading(false))
@@ -68,7 +78,48 @@ export default function Knowledge() {
 
   useEffect(() => {
     loadData()
+    return () => {
+      // 组件卸载时清理所有定时器
+      Object.values(pollTimers.current).forEach(clearInterval)
+      pollTimers.current = {}
+    }
   }, [loadData])
+
+  const startPolling = (docId) => {
+    if (pollTimers.current[docId]) return
+    let attempts = 0
+    const maxAttempts = 300 // 10 分钟（每 2 秒一次）
+    pollTimers.current[docId] = setInterval(async () => {
+      attempts++
+      try {
+        const status = await knowledgeApi.getStatus(docId)
+        // 更新文档列表中该文档的状态
+        setDocs((prev) =>
+          prev.map((d) =>
+            d.id === docId
+              ? { ...d, status: status.status, chunkProgress: status.chunkProgress, chunkTotal: status.chunkTotal }
+              : d
+          )
+        )
+        if (status.status === 'ready') {
+          clearInterval(pollTimers.current[docId])
+          delete pollTimers.current[docId]
+          message.success(`文档向量化完成（${status.chunkTotal} 块）`)
+          loadData()
+        } else if (status.status === 'failed') {
+          clearInterval(pollTimers.current[docId])
+          delete pollTimers.current[docId]
+          message.error(`文档向量化失败：${status.errorMessage || '未知错误'}`)
+        } else if (attempts >= maxAttempts) {
+          clearInterval(pollTimers.current[docId])
+          delete pollTimers.current[docId]
+          message.warning('导入超时，请稍后刷新查看结果')
+        }
+      } catch {
+        // 轮询失败，继续重试
+      }
+    }, 2000)
+  }
 
   const readFile = async (file) => {
     const text = await file.text()
@@ -78,18 +129,19 @@ export default function Knowledge() {
       fileName: file.name,
     })
     message.success(`已读取 ${file.name}（${text.length} 字符）`)
-    return false // 阻止自动上传，由提交时统一走 JSON 接口
+    return false
   }
 
   const handleImport = async () => {
     const values = await form.validateFields()
     setSaving(true)
     try {
-      const doc = await knowledgeApi.create(values)
-      message.success(`导入成功：${doc.title}（${doc.chunkCount} 个片段）`)
+      const res = await knowledgeApi.create(values)
+      message.success(`已提交导入：${res.title}（${res.chunkTotal} 块），正在向量化...`)
       setModalOpen(false)
       form.resetFields()
       loadData()
+      startPolling(res.id)
     } catch (e) {
       message.error('导入失败：' + (e?.response?.data?.detail || e.message))
     } finally {
@@ -98,12 +150,27 @@ export default function Knowledge() {
   }
 
   const handleDelete = async (id) => {
+    if (pollTimers.current[id]) {
+      clearInterval(pollTimers.current[id])
+      delete pollTimers.current[id]
+    }
     try {
       await knowledgeApi.remove(id)
       message.success('文档已删除')
       loadData()
     } catch (e) {
       message.error('删除失败：' + (e?.response?.data?.detail || e.message))
+    }
+  }
+
+  const handleRetry = async (id) => {
+    try {
+      await knowledgeApi.retry(id)
+      message.success('已重新提交导入')
+      startPolling(id)
+      loadData()
+    } catch (e) {
+      message.error('重试失败：' + (e?.response?.data?.detail || e.message))
     }
   }
 
@@ -131,17 +198,15 @@ export default function Knowledge() {
 
   // ===== 批量导入 =====
 
-  /** 选择多文件后收集到待导入列表（阻止自动上传） */
   const collectBatchFiles = (file) => {
     const title = file.name.replace(/\.[^.]+$/, '')
     setBatchFiles((prev) => [
       ...prev,
       { file, title, status: 'pending', msg: '', chunks: 0 },
     ])
-    return false // 阻止 Upload 自动发请求
+    return false
   }
 
-  /** 批量导入执行：逐个读文本→调 API→更新状态（串行，避免 Ollama embedding 超时） */
   const handleBatchImport = async () => {
     if (!batchFiles.length) return
     setBatchRunning(true)
@@ -150,7 +215,6 @@ export default function Knowledge() {
     for (let i = 0; i < batchFiles.length; i++) {
       const item = batchFiles[i]
       if (item.status === 'ok') continue
-      // 标记进行中
       setBatchFiles((prev) =>
         prev.map((p, idx) => (idx === i ? { ...p, status: 'running' } : p))
       )
@@ -159,7 +223,7 @@ export default function Knowledge() {
         if (!content || !content.trim()) {
           throw new Error('文件内容为空')
         }
-        const doc = await knowledgeApi.create({
+        const res = await knowledgeApi.create({
           title: item.title || item.file.name,
           fileName: item.file.name,
           content,
@@ -167,9 +231,10 @@ export default function Knowledge() {
         ok++
         setBatchFiles((prev) =>
           prev.map((p, idx) =>
-            idx === i ? { ...p, status: 'ok', msg: `${doc.chunkCount} 片段`, chunks: doc.chunkCount } : p
+            idx === i ? { ...p, status: 'ok', msg: `${res.chunkTotal} 块向量化中`, chunks: res.chunkTotal } : p
           )
         )
+        startPolling(res.id)
       } catch (e) {
         fail++
         const errMsg = e?.response?.data?.detail || e.message
@@ -180,22 +245,20 @@ export default function Knowledge() {
     }
     setBatchRunning(false)
     if (fail === 0) {
-      message.success(`批量导入完成：${ok} 篇文档全部成功`)
+      message.success(`批量提交完成：${ok} 篇文档已提交导入`)
       setModalOpen(false)
       setBatchFiles([])
       loadData()
     } else {
-      message.warning(`批量导入完成：成功 ${ok} 篇，失败 ${fail} 篇`)
-      loadData() // 刷新已成功的部分
+      message.warning(`批量提交完成：成功 ${ok} 篇，失败 ${fail} 篇`)
+      loadData()
     }
   }
 
-  /** 移除待导入列表中的文件 */
   const removeBatchFile = (idx) => {
     setBatchFiles((prev) => prev.filter((_, i) => i !== idx))
   }
 
-  /** 清空待导入列表 */
   const clearBatchFiles = () => setBatchFiles([])
 
   const columns = [
@@ -208,11 +271,39 @@ export default function Knowledge() {
       render: (v) => (v ? <Tag icon={<FileTextOutlined />}>{v}</Tag> : '-'),
     },
     { title: '片段数', dataIndex: 'chunkCount', width: 90 },
-    { title: '字符数', dataIndex: 'contentLength', width: 100 },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 160,
+      render: (v, record) => {
+        if (!v || v === 'ready') return <Tag icon={<CheckCircleOutlined />} color="success">就绪</Tag>
+        if (v === 'processing') {
+          const percent = record.chunkTotal > 0
+            ? Math.round((record.chunkProgress / record.chunkTotal) * 100)
+            : 0
+          return (
+            <div style={{ minWidth: 120 }}>
+              <Progress percent={percent} size="small" status="active" />
+              <span style={{ fontSize: 12, color: '#999' }}>
+                {record.chunkProgress}/{record.chunkTotal} 块
+              </span>
+            </div>
+          )
+        }
+        if (v === 'failed') {
+          return (
+            <Tooltip title={record.errorMessage || '导入失败'}>
+              <Tag icon={<CloseCircleOutlined />} color="error">失败</Tag>
+            </Tooltip>
+          )
+        }
+        return <Tag>{v}</Tag>
+      },
+    },
     { title: '导入时间', dataIndex: 'createdAt', width: 170 },
     {
       title: '操作',
-      width: 150,
+      width: 180,
       render: (_, record) => (
         <Space>
           <Button
@@ -223,6 +314,15 @@ export default function Knowledge() {
           >
             查看
           </Button>
+          {record.status === 'failed' && (
+            <Button
+              type="link"
+              size="small"
+              onClick={() => handleRetry(record.id)}
+            >
+              重试
+            </Button>
+          )}
           <Popconfirm
             title="删除后向量索引同步失效，确定删除？"
             okText="删除"
@@ -396,7 +496,7 @@ export default function Knowledge() {
                   {batchFiles.length === 0 ? (
                     <Typography.Text type="secondary">
                       选择多个 .md / .txt 文件后，逐个自动分块并向量化导入。
-                      因向量模型（CPU bge-m3）串行推理，导入速度约 1 篇/6 秒。
+                      提交后后台异步执行，不会阻塞界面。
                     </Typography.Text>
                   ) : (
                     <Table
@@ -437,7 +537,7 @@ export default function Knowledge() {
                           render: (v, row) => {
                             if (v === 'pending') return <Tag>待导入</Tag>
                             if (v === 'running')
-                              return <Tag color="processing">导入中…</Tag>
+                              return <Tag color="processing">提交中…</Tag>
                             if (v === 'ok')
                               return (
                                 <Tag icon={<CheckCircleOutlined />} color="success">

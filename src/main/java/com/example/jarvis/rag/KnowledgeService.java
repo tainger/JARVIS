@@ -21,26 +21,27 @@ import com.example.jarvis.model.KnowledgeDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 /**
  * 知识库核心服务（检索核心独立，供多入口复用）：
- * - 导入：先向量化再入库（失败不留孤儿文档）；Markdown 标题感知分块 + 面包屑前缀 + 片段重叠
+ * - 导入：异步模式 — 同步分块+落库，异步 embedding，启动恢复中断任务
  * - 检索：混合评分 = 0.75 * 向量 cosine + 0.25 * 词面重合（中文 bigram + 英文词元），
- *         返回 Top-K 不做硬阈值截断（注入上下文时才按 minScore 过滤）
+ * 返回 Top-K 不做硬阈值截断（注入上下文时才按 minScore 过滤）
  * - 内存索引采用写时复制快照，导入/删除后原子替换，线程安全
  */
 @Service
-@DependsOnDatabaseInitialization  // 保证在 Flyway / sql.init 等数据库初始化之后再 @PostConstruct 加载索引
+@DependsOnDatabaseInitialization
 public class KnowledgeService {
 
 	private static final Logger log = LoggerFactory.getLogger(KnowledgeService.class);
 
-	/** Markdown 标题行，如 ## 报销制度 */
 	private static final Pattern HEADING = Pattern.compile("^(#{1,6})\\s+(.+?)\\s*#*\\s*$");
 
-	/** 混合评分中向量相似度的权重 */
 	private static final double VECTOR_WEIGHT = 0.75;
 
 	private final KnowledgeMapper knowledgeMapper;
@@ -49,56 +50,84 @@ public class KnowledgeService {
 
 	private final RagProperties properties;
 
-	/** 内存向量索引快照；查询时整体读取，写操作时整体替换 */
+	/**
+	 * 延迟注入自身代理，用于在同类内调用 @Async 方法时走 Spring 代理。
+	 * 避免 this.xxx() 绕过 AOP 导致 @Async 失效的问题。
+	 */
+	@Lazy
+	private final KnowledgeService self;
+
 	private final AtomicReference<List<IndexedChunk>> indexSnapshot =
 			new AtomicReference<>(new CopyOnWriteArrayList<>());
 
-	/** 内存索引中的一条向量记录 */
 	public record IndexedChunk(long chunkId, long documentId, String documentTitle,
 			int seq, String content, float[] vector) {
 	}
 
-	/** 一条检索命中（score 为混合评分：向量 + 词面） */
 	public record SearchHit(long documentId, String documentTitle, int seq,
 			String content, double score) {
 	}
 
 	public KnowledgeService(KnowledgeMapper knowledgeMapper,
-			OllamaEmbeddingClient embeddingClient, RagProperties properties) {
+			OllamaEmbeddingClient embeddingClient, RagProperties properties,
+			@Lazy KnowledgeService self) {
 		this.knowledgeMapper = knowledgeMapper;
 		this.embeddingClient = embeddingClient;
 		this.properties = properties;
+		this.self = self;
 		reloadIndex();
+	}
+
+	/** 向量化任务卡死超时时间（分钟），超过则重置为 processing 重新排队 */
+	private static final int EMBEDDING_STUCK_TIMEOUT_MINUTES = 30;
+
+	/**
+	 * 定时兜底：每 60 秒扫描一次，先重置卡死任务，再串行处理 processing 状态的文档。
+	 * 正常提交导入时由 @Async 立即触发，这里作为兜底和重启恢复。
+	 */
+	@Scheduled(fixedDelay = 60000)
+	public void scheduledEmbeddingRecovery() {
+		// 1. 先重置卡死的 embedding 任务（进程崩溃等场景）
+		int reset = knowledgeMapper.resetStuckEmbedding(EMBEDDING_STUCK_TIMEOUT_MINUTES);
+		if (reset > 0) {
+			log.info("定时兜底：重置了 {} 个卡死的 embedding 任务", reset);
+		}
+
+		// 2. 串行处理 processing 状态的文档
+		List<KnowledgeDocument> pending = knowledgeMapper.findByStatus("processing");
+		if (pending.isEmpty()) {
+			return;
+		}
+		log.info("定时兜底：发现 {} 个待处理文档，开始串行执行", pending.size());
+		for (KnowledgeDocument doc : pending) {
+			processEmbedding(doc.getId());
+		}
 	}
 
 	// ---------- 导入 ----------
 
 	/**
-	 * 导入一篇文档：分块 → 向量化 → 落库。
-	 * 向量化在任何 DB 写入之前执行，失败时不会留下"有文档无向量"的孤儿记录。
-	 *
-	 * @return 落库后的文档（含 id 与 chunkCount）
+	 * 提交文档导入（同步部分）：清洗 → 分块 → 落库（status=processing）→ 触发异步 embedding。
+	 * 立即返回文档对象，不等待 embedding 完成。
 	 */
-	public KnowledgeDocument importDocument(String title, String fileName, String content) {
+	public KnowledgeDocument submitImport(String title, String fileName, String content) {
 		if (!StringUtils.hasText(content)) {
 			throw new IllegalArgumentException("文档内容不能为空");
 		}
-		// 清洗：简历/富文本导出的 md 常内嵌大量 HTML 标签（<div>/<img>/图标），
-		// 直接分块会产生大量噪声块，必须先剥离
 		String trimmed = stripHtml(content.strip());
 		if (trimmed.isEmpty()) {
 			throw new IllegalArgumentException("文档内容清洗后为空（可能全是 HTML 标签）");
 		}
 		List<String> chunks = splitIntoChunks(trimmed);
 
-		// 先向量化：失败直接抛异常，不产生半成品数据
-		List<float[]> vectors = embeddingClient.embed(chunks);
-
 		KnowledgeDocument doc = new KnowledgeDocument();
 		doc.setTitle(StringUtils.hasText(title) ? title.strip() : defaultTitle(fileName, trimmed));
 		doc.setFileName(fileName);
 		doc.setContent(trimmed);
 		doc.setChunkCount(chunks.size());
+		doc.setStatus("processing");
+		doc.setChunkProgress(0);
+		doc.setChunkTotal(chunks.size());
 		knowledgeMapper.insertDocument(doc);
 
 		for (int i = 0; i < chunks.size(); i++) {
@@ -106,14 +135,86 @@ public class KnowledgeService {
 			chunk.setDocumentId(doc.getId());
 			chunk.setSeq(i);
 			chunk.setContent(chunks.get(i));
-			chunk.setEmbedding(toJson(vectors.get(i)));
-			chunk.setDim(vectors.get(i).length);
+			chunk.setEmbedding(null);
+			chunk.setDim(0);
 			knowledgeMapper.insertChunk(chunk);
 		}
 
-		log.info("知识库导入文档 '{}'（{} 字符，{} 块）", doc.getTitle(), trimmed.length(), chunks.size());
-		reloadIndex();
+		log.info("文档 '{}' 已提交导入（{} 块），开始异步向量化", doc.getTitle(), chunks.size());
+		self.processEmbedding(doc.getId());
 		return doc;
+	}
+
+	/**
+	 * 异步执行 embedding：逐块向量化 → 更新进度 → 完成时刷新索引。
+	 * 标记为 @Async，不阻塞调用线程。
+	 * 幂等：先删除已有 chunk 再重新分块+向量化，重启恢复时安全调用。
+	 */
+	@Async("knowledgeExecutor")
+	public void processEmbedding(Long docId) {
+		try {
+			log.info("[线程: {}] 开始认领文档 docId={}", Thread.currentThread().getName(), docId);
+
+			// CAS 认领：只有 status=processing 时才能抢到任务
+			int claimed = knowledgeMapper.claimForEmbedding(docId);
+			if (claimed == 0) {
+				log.info("[线程: {}] 文档 docId={} 已被其他线程认领，跳过", Thread.currentThread().getName(), docId);
+				return;
+			}
+			log.info("[线程: {}] 成功认领文档 docId={}，开始向量化", Thread.currentThread().getName(), docId);
+
+			KnowledgeDocument doc = knowledgeMapper.findDocumentById(docId);
+			if (doc == null) {
+				log.warn("[线程: {}] 文档不存在：docId={}", Thread.currentThread().getName(), docId);
+				return;
+			}
+
+			List<KnowledgeChunk> existingChunks = knowledgeMapper.findChunksByDocumentId(docId);
+			List<String> chunkTexts;
+			if (existingChunks.isEmpty() || existingChunks.get(0).getContent() == null) {
+				String trimmed = stripHtml(doc.getContent().strip());
+				chunkTexts = splitIntoChunks(trimmed);
+				knowledgeMapper.deleteChunksByDocumentId(docId);
+				for (int i = 0; i < chunkTexts.size(); i++) {
+					KnowledgeChunk chunk = new KnowledgeChunk();
+					chunk.setDocumentId(docId);
+					chunk.setSeq(i);
+					chunk.setContent(chunkTexts.get(i));
+					chunk.setEmbedding(null);
+					chunk.setDim(0);
+					knowledgeMapper.insertChunk(chunk);
+				}
+			} else {
+				chunkTexts = existingChunks.stream()
+						.map(KnowledgeChunk::getContent)
+						.toList();
+			}
+
+			int total = chunkTexts.size();
+			for (int i = 0; i < total; i++) {
+				float[] vector = embeddingClient.embedOne(chunkTexts.get(i));
+				knowledgeMapper.updateChunkEmbedding(docId, i, toJson(vector), vector.length);
+				knowledgeMapper.updateChunkProgress(docId, i + 1);
+				if (i % 5 == 0) {
+					log.info("文档 '{}' 向量化进度：{}/{}", doc.getTitle(), i + 1, total);
+				}
+			}
+
+			knowledgeMapper.updateStatus(docId, "ready", null);
+			reloadIndex();
+			log.info("[线程: {}] 文档 '{}' 向量化完成（{} 块）", Thread.currentThread().getName(), doc.getTitle(), total);
+		}
+		catch (Exception e) {
+			log.error("[线程: {}] 文档向量化失败：docId={}", Thread.currentThread().getName(), docId, e);
+			knowledgeMapper.updateStatus(docId, "failed", truncateError(e.getMessage()));
+		}
+	}
+
+	private String truncateError(String msg) {
+		if (msg == null) {
+			return null;
+		}
+		return msg.length() > 2000 ? msg.substring(0, 2000) + "..." : msg;
 	}
 
 	// ---------- 删除 ----------
@@ -142,9 +243,27 @@ public class KnowledgeService {
 		return doc;
 	}
 
+	public KnowledgeDocument getImportStatus(Long id) {
+		return knowledgeMapper.findDocumentById(id);
+	}
+
+	public void retryImport(Long id) {
+		KnowledgeDocument doc = knowledgeMapper.findDocumentById(id);
+		if (doc == null) {
+			throw new IllegalArgumentException("文档不存在：" + id);
+		}
+		if (!"failed".equals(doc.getStatus())) {
+			throw new IllegalStateException("仅允许重试失败的文档");
+		}
+		knowledgeMapper.deleteChunksByDocumentId(id);
+		knowledgeMapper.updateStatus(id, "processing", null);
+		knowledgeMapper.updateChunkProgress(id, 0);
+		log.info("重试导入文档：docId={}, title={}", id, doc.getTitle());
+		processEmbedding(id);
+	}
+
 	/**
 	 * 混合检索：查询向量化 → 内存全量评分（向量 cosine + 词面重合）→ Top-K。
-	 * 不做硬阈值截断，保证"搜不到"与"分数低"是可区分的信息。
 	 */
 	public List<SearchHit> search(String query, Integer topK) {
 		if (!StringUtils.hasText(query)) {
@@ -174,13 +293,6 @@ public class KnowledgeService {
 				.collect(Collectors.toList());
 	}
 
-	/**
-	 * 检索并组装"带引用编号的注入上下文"：片段按 [1..n] 编号（与返回的 hits 顺序一致，
-	 * 供前端渲染来源卡片），无足够相关的命中返回 null。
-	 * 这里做双阈值过滤：Top1 必须达到 injectScore 才注入（强相关才走入口 A）；
-	 * 落在 [minScore, injectScore) 的多为"工具意图"等域内噪声，不注入，
-	 * 由 agent 自主判断是否调用 knowledge_search 工具。
-	 */
 	public RagInjection buildInjection(String query, Integer topK) {
 		List<SearchHit> all = search(query, topK);
 		if (all.isEmpty() || all.get(0).score() < properties.getRetrieval().getInjectScore()) {
@@ -201,13 +313,9 @@ public class KnowledgeService {
 		return new RagInjection(sb.toString().strip(), List.copyOf(hits));
 	}
 
-	/** 注入上下文 + 命中片段（编号一一对应，供回答引用来源展示） */
 	public record RagInjection(String context, List<SearchHit> hits) {
 	}
 
-	/**
-	 * 知识库统计信息（供健康检查 / 前端展示）。
-	 */
 	public Map<String, Object> stats() {
 		List<IndexedChunk> index = indexSnapshot.get();
 		return Map.of(
@@ -216,7 +324,6 @@ public class KnowledgeService {
 				"embeddingModel", embeddingClient.modelName());
 	}
 
-	/** 重建内存索引（启动时 / 文档变更后调用） */
 	public synchronized void reloadIndex() {
 		Map<Long, String> titles = knowledgeMapper.findAllDocuments().stream()
 				.collect(Collectors.toMap(KnowledgeDocument::getId, KnowledgeDocument::getTitle));
@@ -232,14 +339,6 @@ public class KnowledgeService {
 
 	// ---------- 分块（Markdown 标题感知 + 面包屑 + 重叠） ----------
 
-	/**
-	 * 按结构分块：
-	 * 1. 识别 Markdown 标题（# ~ ######），用标题栈维护"面包屑"路径；
-	 * 2. 每个标题section内部按空行切段、顺序合并到 maxChars；
-	 * 3. 超过 hardLimit 的段落按句子硬切；相邻块之间保留 overlapChars 重叠；
-	 * 4. 每块正文前拼上面包屑（如 "JARVIS 团队手册 > 报销制度"），让块自带语义上下文。
-	 * 纯文本（无标题）退化为按段落合并。
-	 */
 	List<String> splitIntoChunks(String content) {
 		int maxChars = properties.getChunk().getMaxChars();
 		List<String> result = new ArrayList<>();
@@ -252,7 +351,6 @@ public class KnowledgeService {
 		for (String line : lines) {
 			Matcher m = HEADING.matcher(line.strip());
 			if (m.matches()) {
-				// 遇到新标题：先落盘上一节，再更新标题栈
 				flushSection(result, breadcrumb, section.toString(), maxChars);
 				section.setLength(0);
 				int level = m.group(1).length();
@@ -271,7 +369,6 @@ public class KnowledgeService {
 		return result.stream().filter(s -> !s.isBlank()).toList();
 	}
 
-	/** 把一个 section 的正文切成长度合适的块并加入结果（含面包屑前缀） */
 	private void flushSection(List<String> result, String breadcrumb, String sectionText, int maxChars) {
 		String body = sectionText.strip();
 		if (body.isEmpty()) {
@@ -286,7 +383,6 @@ public class KnowledgeService {
 			if (current.length() > 0
 					&& current.length() + piece.length() + 1 > budget) {
 				result.add((prefix + current).strip());
-				// 新块以上一块的尾部开头，保持上下文连续
 				String tail = tailSentences(current.toString(), overlap);
 				current = new StringBuilder(tail);
 				if (!tail.isEmpty() && !tail.endsWith("\n")) {
@@ -303,7 +399,6 @@ public class KnowledgeService {
 		}
 	}
 
-	/** 把正文拆成不超过 hardLimit 的"段/句级"碎片 */
 	private List<String> piecesOf(String body) {
 		RagProperties.Chunk cfg = properties.getChunk();
 		List<String> pieces = new ArrayList<>();
@@ -316,7 +411,6 @@ public class KnowledgeService {
 				pieces.add(p);
 				continue;
 			}
-			// 超长段落按句末标点/换行硬切
 			StringBuilder piece = new StringBuilder();
 			for (String sentence : p.split("(?<=[。！？；.!?\n])")) {
 				if (piece.length() + sentence.length() > cfg.getHardLimit() && piece.length() > 0) {
@@ -332,7 +426,6 @@ public class KnowledgeService {
 		return pieces;
 	}
 
-	/** 取文本末尾约 maxChars 的内容，并尽量从句子边界开始 */
 	private String tailSentences(String text, int maxChars) {
 		if (maxChars <= 0 || text.length() <= maxChars) {
 			return maxChars <= 0 ? "" : text;
@@ -349,17 +442,12 @@ public class KnowledgeService {
 		if (StringUtils.hasText(fileName)) {
 			return fileName;
 		}
-		// 取第一行作为标题（截断到 50 字符）
 		String firstLine = content.split("\\R", 2)[0];
 		return firstLine.length() > 50 ? firstLine.substring(0, 50) : firstLine;
 	}
 
 	// ---------- HTML 清洗 ----------
 
-	/**
-	 * 剥离内嵌 HTML，只保留可见文本：
-	 * script/style 整块删除；块级标签转行；其余标签删除；解码常见实体。
-	 */
 	String stripHtml(String input) {
 		if (!input.contains("<")) {
 			return input;
@@ -384,11 +472,6 @@ public class KnowledgeService {
 
 	// ---------- 混合评分 ----------
 
-	/**
-	 * 词面重合度（0~1）：查询分词后统计在文本中的命中比例。
-	 * 中文按相邻双字（bigram），英文/数字按词元；能兜住"向量不敏感的精确词"
-	 * （产品名、人名、型号、缩写等）。
-	 */
 	double lexicalScore(Set<String> queryTerms, String text) {
 		if (queryTerms.isEmpty() || text == null || text.isEmpty()) {
 			return 0;
@@ -403,11 +486,6 @@ public class KnowledgeService {
 		return (double) hit / queryTerms.size();
 	}
 
-	/**
-	 * 查询分词：中文相邻双字 + 英文/数字词元，去重。
-	 * 例："出差吃饭一天补多少钱" → [出差, 差吃, 吃饭, 饭一, 一天, 天补, 补多, 多少, 少钱]
-	 * 例："bge-m3 是什么" → [bge, m3, 是什么]
-	 */
 	Set<String> tokenize(String query) {
 		Set<String> terms = new LinkedHashSet<>();
 		String normalized = query.toLowerCase(Locale.ROOT);

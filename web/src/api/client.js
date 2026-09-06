@@ -148,7 +148,9 @@ export const mcpApi = {
 export const knowledgeApi = {
   list: () => http.get('/knowledge/documents').then((r) => r.data),
   get: (id) => http.get(`/knowledge/documents/${id}`).then((r) => r.data),
-  create: (data) => http.post('/knowledge/documents', data).then((r) => r.data),
+  create: (data) => http.post('/knowledge/documents', data, { timeout: 60000 }).then((r) => r.data),
+  getStatus: (id) => http.get(`/knowledge/documents/${id}/status`).then((r) => r.data),
+  retry: (id) => http.post(`/knowledge/documents/${id}/retry`).then((r) => r.data),
   remove: (id) => http.delete(`/knowledge/documents/${id}`),
   search: (query, topK) =>
     http.post('/knowledge/search', { query, topK }).then((r) => r.data),

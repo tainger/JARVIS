@@ -14,8 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 知识库管理接口：文档导入（文本/文件内容）、列表、详情、删除、检索测试。
- * 前端上传 .md/.txt 文件时先读为文本，再以 JSON 提交，后端不处理 multipart。
+ * 知识库管理接口：文档导入（异步）、列表、详情、删除、检索测试、导入状态查询。
  */
 @RestController
 @RequestMapping("/api/knowledge")
@@ -27,7 +26,6 @@ public class KnowledgeController {
 		this.knowledgeService = knowledgeService;
 	}
 
-	/** 文档列表（不含正文，避免大响应） */
 	@GetMapping("/documents")
 	public List<Map<String, Object>> listDocuments() {
 		return knowledgeService.listDocuments().stream()
@@ -41,11 +39,11 @@ public class KnowledgeController {
 	}
 
 	/**
-	 * 导入文档。body: {title?, fileName?, content}
-	 * content 为纯文本或 Markdown，导入时自动分块并向量化。
+	 * 提交导入文档（异步）。body: {title?, fileName?, content}
+	 * 立即返回文档 ID 和 processing 状态，前端轮询 /documents/{id}/status 获取进度。
 	 */
 	@PostMapping("/documents")
-	public KnowledgeDocument importDocument(@RequestBody Map<String, String> body) {
+	public Map<String, Object> importDocument(@RequestBody Map<String, String> body) {
 		String content = body.get("content");
 		if (content == null || content.isBlank()) {
 			throw new IllegalArgumentException("文档内容不能为空");
@@ -53,8 +51,30 @@ public class KnowledgeController {
 		if (content.length() > 2_000_000) {
 			throw new IllegalArgumentException("文档过大（上限约 2MB 文本），请拆分后导入");
 		}
-		return knowledgeService.importDocument(
+		KnowledgeDocument doc = knowledgeService.submitImport(
 				body.get("title"), body.get("fileName"), content);
+		return Map.of(
+				"id", doc.getId(),
+				"title", doc.getTitle(),
+				"status", doc.getStatus(),
+				"chunkTotal", doc.getChunkTotal());
+	}
+
+	@GetMapping("/documents/{id}/status")
+	public Map<String, Object> getImportStatus(@PathVariable Long id) {
+		KnowledgeDocument doc = knowledgeService.getImportStatus(id);
+		return Map.of(
+				"id", doc.getId(),
+				"status", doc.getStatus() == null ? "ready" : doc.getStatus(),
+				"chunkProgress", doc.getChunkProgress(),
+				"chunkTotal", doc.getChunkTotal(),
+				"errorMessage", doc.getErrorMessage() == null ? "" : doc.getErrorMessage());
+	}
+
+	@PostMapping("/documents/{id}/retry")
+	public Map<String, Object> retryImport(@PathVariable Long id) {
+		knowledgeService.retryImport(id);
+		return Map.of("id", id, "status", "processing");
 	}
 
 	@DeleteMapping("/documents/{id}")
@@ -63,7 +83,6 @@ public class KnowledgeController {
 		return Map.of("deleted", id);
 	}
 
-	/** 检索测试。body: {query, topK?} */
 	@PostMapping("/search")
 	public Map<String, Object> search(@RequestBody Map<String, Object> body) {
 		String query = (String) body.get("query");
@@ -72,7 +91,6 @@ public class KnowledgeController {
 		return Map.of("query", query == null ? "" : query, "hits", hits);
 	}
 
-	/** 知识库统计 */
 	@GetMapping("/stats")
 	public Map<String, Object> stats() {
 		return knowledgeService.stats();
@@ -85,6 +103,9 @@ public class KnowledgeController {
 				"fileName", doc.getFileName() == null ? "" : doc.getFileName(),
 				"chunkCount", doc.getChunkCount(),
 				"contentLength", doc.getContent() == null ? 0 : doc.getContent().length(),
+				"status", doc.getStatus() == null ? "ready" : doc.getStatus(),
+				"chunkProgress", doc.getChunkProgress(),
+				"chunkTotal", doc.getChunkTotal(),
 				"createdAt", doc.getCreatedAt() == null ? "" : doc.getCreatedAt().toString());
 	}
 
