@@ -58,7 +58,7 @@ export default function SourceAnalysis() {
     setError('')
 
     const userMsg = { role: 'user', content }
-    const botMsg = { role: 'assistant', content: '', reasoning: '' }
+    const botMsg = { role: 'assistant', content: '', reasoning: '', trace: [] }
     setMessages((prev) => [...prev, userMsg, botMsg])
     setStreaming(true)
 
@@ -68,6 +68,7 @@ export default function SourceAnalysis() {
     try {
       let acc = ''
       let reasoningAcc = ''
+      let traceAcc = []
       for await (const { event, data } of streamChat(content, controller.signal, {
         mode: 'source-analysis',
       })) {
@@ -87,13 +88,29 @@ export default function SourceAnalysis() {
             next[next.length - 1] = { ...next[next.length - 1], reasoning: reasoningAcc }
             return next
           })
+        } else if (event === 'tool_call') {
+          try {
+            const parsed = JSON.parse(data)
+            traceAcc = [...traceAcc, { ...parsed, type: 'tool_call' }]
+            setMessages((prev) => {
+              const next = [...prev]
+              next[next.length - 1] = { ...next[next.length - 1], trace: [...traceAcc] }
+              return next
+            })
+          } catch { /* ignore */ }
+        } else if (event === 'tool_result') {
+          try {
+            const parsed = JSON.parse(data)
+            traceAcc = [...traceAcc, { ...parsed, type: 'tool_result' }]
+            setMessages((prev) => {
+              const next = [...prev]
+              next[next.length - 1] = { ...next[next.length - 1], trace: [...traceAcc] }
+              return next
+            })
+          } catch { /* ignore */ }
         } else if (event === 'error') {
           let msg = data
-          try {
-            msg = JSON.parse(data).error || data
-          } catch {
-            // keep raw
-          }
+          try { msg = JSON.parse(data).error || data } catch { /* keep raw */ }
           throw new Error(msg)
         } else if (event === 'done') {
           break
@@ -246,6 +263,54 @@ export default function SourceAnalysis() {
                             </summary>
                             <div style={{ marginTop: 6, whiteSpace: 'pre-wrap', opacity: 0.85 }}>
                               {msg.reasoning}
+                            </div>
+                          </details>
+                        )}
+                        {msg.trace && msg.trace.length > 0 && (
+                          <details
+                            style={{
+                              marginBottom: 8,
+                              border: 'none',
+                              background: 'rgba(99,102,241,0.04)',
+                              borderRadius: 12,
+                              padding: '8px 12px',
+                              fontSize: 13,
+                              color: CLAY.inkSoft,
+                            }}
+                          >
+                            <summary style={{ cursor: 'pointer', fontWeight: 700, userSelect: 'none' }}>
+                              🔧 推理路径（{msg.trace.length} 步）
+                            </summary>
+                            <div style={{ marginTop: 6 }}>
+                              {msg.trace.map((t, ti) => (
+                                <div key={ti} style={{
+                                  marginBottom: 6,
+                                  padding: '6px 10px',
+                                  background: t.type === 'tool_result' && t.summary && (t.summary.includes('denied') || t.summary.includes('error') || t.summary.includes('Error'))
+                                    ? 'rgba(244,67,54,0.08)' : 'rgba(0,0,0,0.03)',
+                                  borderRadius: 8,
+                                  borderLeft: t.type === 'tool_call' ? '3px solid #6c5ce7' : '3px solid #00b894',
+                                }}>
+                                  <span style={{ fontWeight: 700, color: t.type === 'tool_call' ? '#6c5ce7' : '#00b894' }}>
+                                    {t.type === 'tool_call' ? '🔍' : '↳'} Step {t.step}: {t.tool}
+                                  </span>
+                                  {t.type === 'tool_call' && t.args && (
+                                    <div style={{ marginTop: 2, fontSize: 12, fontFamily: 'monospace', opacity: 0.7, wordBreak: 'break-all' }}>
+                                      args: {typeof t.args === 'string' ? t.args : JSON.stringify(t.args)}
+                                    </div>
+                                  )}
+                                  {t.type === 'tool_result' && (
+                                    <>
+                                      <div style={{ marginTop: 2, fontSize: 12, opacity: 0.7, wordBreak: 'break-all' }}>
+                                        {t.summary}
+                                      </div>
+                                      {t.truncated && (
+                                        <span style={{ fontSize: 11, color: '#e6a700', fontWeight: 700 }}> ⚠ 截断</span>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              ))}
                             </div>
                           </details>
                         )}

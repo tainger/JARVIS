@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.jarvis.mapper.AgentTraceMapper">
+
+	<resultMap id="AgentTraceResultMap" type="com.example.jarvis.model.AgentTrace">
+		<id property="id" column="id"/>
+		<result property="messageId" column="message_id"/>
+		<result property="conversationId" column="conversation_id"/>
+		<result property="userId" column="user_id"/>
+		<result property="stepIndex" column="step_index"/>
+		<result property="stepType" column="step_type"/>
+		<result property="content" column="content"/>
+		<result property="toolName" column="tool_name"/>
+		<result property="toolArgs" column="tool_args"/>
+		<result property="toolResult" column="tool_result"/>
+		<result property="durationMs" column="duration_ms"/>
+		<result property="isTruncated" column="is_truncated"/>
+		<result property="createdAt" column="created_at"/>
+	</resultMap>
+
+	<insert id="batchInsert" parameterType="java.util.List">
+		INSERT INTO agent_trace
+			(message_id, conversation_id, user_id, step_index, step_type,
+			 content, tool_name, tool_args, tool_result, duration_ms, is_truncated)
+		VALUES
+		<foreach collection="list" item="t" separator=",">
+			(#{t.messageId}, #{t.conversationId}, #{t.userId}, #{t.stepIndex}, #{t.stepType},
+			 #{t.content}, #{t.toolName}, #{t.toolArgs}, #{t.toolResult}, #{t.durationMs}, #{t.isTruncated})
+		</foreach>
+	</insert>
+
+	<select id="findByConversationId" resultMap="AgentTraceResultMap">
+		SELECT id, message_id, conversation_id, user_id, step_index, step_type,
+		       content, tool_name, tool_args, tool_result, duration_ms, is_truncated, created_at
+		FROM agent_trace
+		WHERE conversation_id = #{conversationId}
+		  AND user_id = #{userId}
+		ORDER BY message_id ASC, step_index ASC
+	</select>
+
+</mapper>

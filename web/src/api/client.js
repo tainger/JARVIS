@@ -208,6 +208,13 @@ export const memoryApi = {
 }
 
 // ======================================================================
+// Agent 推理轨迹 API
+// ======================================================================
+export const traceApi = {
+  list: (conversationId) => http.get(`/agent/traces/${conversationId}`).then((r) => r.data),
+}
+
+// ======================================================================
 // SSE 流式聊天（直接用 fetch，不走 axios；同样注入 token）
 // ======================================================================
 /**
@@ -216,6 +223,8 @@ export const memoryApi = {
  *   'conversation'(会话ID，首次请求或新建会话时返回)
  * | 'message'(默认文本增量)
  * | 'reasoning'(模型思考过程)
+ * | 'tool_call'(Agent 调用工具，JSON: step/tool/args)
+ * | 'tool_result'(工具执行结果，JSON: step/tool/summary/truncated)
  * | 'sources'(引用的知识库片段 JSON)
  * | 'error'(后端错误帧)
  * | 'done'(结束标记)

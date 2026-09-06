@@ -10,6 +10,7 @@ import Users from './pages/Users'
 import Agents from './pages/Agents'
 import Knowledge from './pages/Knowledge'
 import EvalCenter from './pages/EvalCenter'
+import AgentTraces from './pages/AgentTraces'
 import { authStore, authApi } from './api/client'
 
 /**
@@ -89,6 +90,7 @@ export default function App() {
         <Route path="agents" element={<Agents />} />
         <Route path="knowledge" element={<Knowledge />} />
         <Route path="eval" element={<EvalCenter />} />
+        <Route path="traces" element={<AgentTraces />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -26,7 +26,7 @@ import {
 } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { conversationApi, evalApi, knowledgeApi, streamChat } from '../api/client'
+import { conversationApi, evalApi, knowledgeApi, streamChat, traceApi } from '../api/client'
 import { BRAND, CLAY, CLAY_SHADOW } from '../theme'
 
 const { TextArea } = Input
@@ -115,7 +115,7 @@ export default function Chat() {
     setSidebarOpen(false)
   }
 
-  // 切换会话：加载历史消息
+  // 切换会话：加载历史消息 + 推理轨迹
   const switchConversation = async (convId) => {
     if (convId === currentConversationId) {
       setSidebarOpen(false)
@@ -128,10 +128,39 @@ export default function Chat() {
     try {
       const data = await conversationApi.get(convId, 0, 100)
       const history = (data.messages || []).map((m) => ({
+        id: m.id,
         role: m.role,
         content: m.content,
         sources: [],
+        trace: [],
       }))
+      // 加载推理轨迹（可能为空——旧对话没有 trace）
+      try {
+        const traces = await traceApi.list(convId)
+        if (traces && traces.length > 0) {
+          // 按 messageId 分组，用消息 id 精确关联
+          const traceMap = {}
+          for (const t of traces) {
+            if (!traceMap[t.messageId]) traceMap[t.messageId] = []
+            traceMap[t.messageId].push({
+              step: t.stepIndex,
+              type: t.stepType,
+              tool: t.toolName || '',
+              args: t.toolArgs || '',
+              summary: t.toolResult || '',
+              truncated: t.isTruncated || false,
+            })
+          }
+          // 用消息 id 精确匹配
+          for (const m of history) {
+            if (m.role === 'assistant' && traceMap[m.id]) {
+              m.trace = traceMap[m.id]
+            }
+          }
+        }
+      } catch {
+        // trace 加载失败不阻断消息加载
+      }
       setMessages(history)
     } catch (e) {
       message.error('加载会话历史失败')
@@ -191,7 +220,7 @@ export default function Chat() {
     setError('')
 
     const userMsg = { role: 'user', content }
-    const botMsg = { role: 'assistant', content: '', sources: [] }
+    const botMsg = { role: 'assistant', content: '', sources: [], trace: [] }
     setMessages((prev) => [...prev, userMsg, botMsg])
     setStreaming(true)
 
@@ -201,21 +230,18 @@ export default function Chat() {
     try {
       let acc = ''
       let reasoningAcc = ''
+      let traceAcc = []
       for await (const { event, data } of streamChat(content, controller.signal, {
         conversationId: currentConversationId,
       })) {
         if (event === 'conversation') {
-          // 后端返回会话ID（首次请求/新建会话时）
           try {
             const parsed = JSON.parse(data)
             if (parsed.conversationId) {
               setCurrentConversationId(parsed.conversationId)
-              // 刷新会话列表（后端可能自动生成了标题）
               loadConversations()
             }
-          } catch {
-            // 忽略解析失败
-          }
+          } catch { /* ignore */ }
         } else if (event === 'message') {
           acc += data
           setMessages((prev) => {
@@ -230,13 +256,29 @@ export default function Chat() {
             next[next.length - 1] = { ...next[next.length - 1], reasoning: reasoningAcc }
             return next
           })
+        } else if (event === 'tool_call') {
+          try {
+            const parsed = JSON.parse(data)
+            traceAcc = [...traceAcc, { ...parsed, type: 'tool_call' }]
+            setMessages((prev) => {
+              const next = [...prev]
+              next[next.length - 1] = { ...next[next.length - 1], trace: [...traceAcc] }
+              return next
+            })
+          } catch { /* ignore */ }
+        } else if (event === 'tool_result') {
+          try {
+            const parsed = JSON.parse(data)
+            traceAcc = [...traceAcc, { ...parsed, type: 'tool_result' }]
+            setMessages((prev) => {
+              const next = [...prev]
+              next[next.length - 1] = { ...next[next.length - 1], trace: [...traceAcc] }
+              return next
+            })
+          } catch { /* ignore */ }
         } else if (event === 'sources') {
           let parsed = []
-          try {
-            parsed = JSON.parse(data)
-          } catch {
-            parsed = []
-          }
+          try { parsed = JSON.parse(data) } catch { parsed = [] }
           setMessages((prev) => {
             const next = [...prev]
             next[next.length - 1] = { ...next[next.length - 1], sources: parsed }
@@ -244,14 +286,9 @@ export default function Chat() {
           })
         } else if (event === 'error') {
           let msg = data
-          try {
-            msg = JSON.parse(data).error || data
-          } catch {
-            // 保留原始文本
-          }
+          try { msg = JSON.parse(data).error || data } catch { /* keep raw */ }
           throw new Error(msg)
         } else if (event === 'done') {
-          // 对话完成后刷新会话列表（更新标题/时间）
           loadConversations()
           break
         }
@@ -547,6 +584,54 @@ export default function Chat() {
                             </summary>
                             <div style={{ marginTop: 6, whiteSpace: 'pre-wrap', opacity: 0.85 }}>
                               {msg.reasoning}
+                            </div>
+                          </details>
+                        )}
+                        {msg.trace && msg.trace.length > 0 && (
+                          <details
+                            style={{
+                              marginBottom: 8,
+                              border: 'none',
+                              background: 'rgba(99,102,241,0.04)',
+                              borderRadius: 12,
+                              padding: '8px 12px',
+                              fontSize: 13,
+                              color: CLAY.inkSoft,
+                            }}
+                          >
+                            <summary style={{ cursor: 'pointer', fontWeight: 700, userSelect: 'none' }}>
+                              🔧 推理路径（{msg.trace.length} 步）
+                            </summary>
+                            <div style={{ marginTop: 6 }}>
+                              {msg.trace.map((t, ti) => (
+                                <div key={ti} style={{
+                                  marginBottom: 6,
+                                  padding: '6px 10px',
+                                  background: t.type === 'tool_result' && t.summary && (t.summary.includes('denied') || t.summary.includes('error') || t.summary.includes('Error'))
+                                    ? 'rgba(244,67,54,0.08)' : 'rgba(0,0,0,0.03)',
+                                  borderRadius: 8,
+                                  borderLeft: t.type === 'tool_call' ? '3px solid #6c5ce7' : '3px solid #00b894',
+                                }}>
+                                  <span style={{ fontWeight: 700, color: t.type === 'tool_call' ? '#6c5ce7' : '#00b894' }}>
+                                    {t.type === 'tool_call' ? '🔍' : '↳'} Step {t.step}: {t.tool}
+                                  </span>
+                                  {t.type === 'tool_call' && t.args && (
+                                    <div style={{ marginTop: 2, fontSize: 12, fontFamily: 'monospace', opacity: 0.7, wordBreak: 'break-all' }}>
+                                      args: {typeof t.args === 'string' ? t.args : JSON.stringify(t.args)}
+                                    </div>
+                                  )}
+                                  {t.type === 'tool_result' && (
+                                    <>
+                                      <div style={{ marginTop: 2, fontSize: 12, opacity: 0.7, wordBreak: 'break-all' }}>
+                                        {t.summary}
+                                      </div>
+                                      {t.truncated && (
+                                        <span style={{ fontSize: 11, color: '#e6a700', fontWeight: 700 }}> ⚠ 截断</span>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              ))}
                             </div>
                           </details>
                         )}

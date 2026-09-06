@@ -11,8 +11,11 @@ import com.example.jarvis.config.AgentScopeConfig;
 import com.example.jarvis.dto.ChatRequest;
 import com.example.jarvis.dto.ChatResponse;
 import com.example.jarvis.dto.ChatSource;
+import com.example.jarvis.mapper.AgentTraceMapper;
 import com.example.jarvis.mapper.MessageMapper;
+import com.example.jarvis.model.AgentTrace;
 import com.example.jarvis.model.Conversation;
+import com.example.jarvis.model.Message;
 import com.example.jarvis.rag.KnowledgeService;
 import com.example.jarvis.service.ConversationService;
 import io.agentscope.core.ReActAgent;
@@ -20,7 +23,10 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.model.exception.AuthenticationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,16 +51,20 @@ public class AgentController {
 
 	private final MessageMapper messageMapper;
 
+	private final AgentTraceMapper agentTraceMapper;
+
 	private final KnowledgeService knowledgeService;
 
 	private final AgentScopeConfig agentScopeConfig;
 
 	public AgentController(AgentFactory agentFactory, ConversationService conversationService,
-			MessageMapper messageMapper, KnowledgeService knowledgeService,
+			MessageMapper messageMapper, AgentTraceMapper agentTraceMapper,
+			KnowledgeService knowledgeService,
 			AgentScopeConfig agentScopeConfig) {
 		this.agentFactory = agentFactory;
 		this.conversationService = conversationService;
 		this.messageMapper = messageMapper;
+		this.agentTraceMapper = agentTraceMapper;
 		this.knowledgeService = knowledgeService;
 		this.agentScopeConfig = agentScopeConfig;
 	}
@@ -112,8 +122,9 @@ public class AgentController {
 		ReActAgent agent = agentFactory.create(userId, conversation.getId(), buildSystemPrompt(request.mode()));
 
 		Msg msg = Msg.builder().textContent(input.message()).build();
+		// 扩展事件订阅：增加 TOOL_RESULT 以捕获工具调用/结果事件
 		StreamOptions options = StreamOptions.builder()
-				.eventTypes(EventType.REASONING, EventType.AGENT_RESULT)
+				.eventTypes(EventType.REASONING, EventType.TOOL_RESULT, EventType.AGENT_RESULT)
 				.incremental(true)
 				.build();
 
@@ -121,16 +132,25 @@ public class AgentController {
 		StringBuilder fullResponse = new StringBuilder();
 		String userMessage = request.message();
 
+		// 推理轨迹收集器（内存中收集，按步骤边界 flush，对话完成后批量写入）
+		TraceState ts = new TraceState();
+
 		agent.stream(List.of(msg), options).subscribe(
-				event -> sendDelta(emitter, event, fullResponse),
+				event -> sendDelta(emitter, event, fullResponse, ts, userId, conversation.getId()),
 				error -> {
 					sendErrorAndComplete(emitter, error);
 					// 错误时也持久化用户消息（助手回复为空或部分）
-					persistMessages(conversation.getId(), userId, userMessage, fullResponse.toString());
+					Long assistantMsgId = persistMessages(conversation.getId(), userId, userMessage, fullResponse.toString());
+					// 写入已收集的部分 trace
+					persistTraces(ts.traces, assistantMsgId, conversation.getId(), userId);
 				},
 				() -> {
+					// flush 最后一个累积的 reasoning 步骤
+					ts.flush();
 					// 持久化对话消息
-					persistMessages(conversation.getId(), userId, userMessage, fullResponse.toString());
+					Long assistantMsgId = persistMessages(conversation.getId(), userId, userMessage, fullResponse.toString());
+					// 写入推理轨迹
+					persistTraces(ts.traces, assistantMsgId, conversation.getId(), userId);
 					// 更新会话活跃时间
 					conversationService.touch(conversation.getId());
 					// 首条消息自动生成标题
@@ -171,14 +191,40 @@ public class AgentController {
 	}
 
 	/**
-	 * 持久化一轮对话的用户消息和助手回复。
+	 * 持久化一轮对话的用户消息和助手回复。返回 assistant 消息 ID（用于关联 trace）。
 	 */
-	private void persistMessages(Long conversationId, Long userId, String userMessage, String assistantMessage) {
+	private Long persistMessages(Long conversationId, Long userId, String userMessage, String assistantMessage) {
 		if (StringUtils.hasText(userMessage)) {
-			messageMapper.insert(new com.example.jarvis.model.Message(conversationId, userId, "user", userMessage));
+			messageMapper.insert(new Message(conversationId, userId, "user", userMessage));
 		}
+		Long assistantMsgId = null;
 		if (StringUtils.hasText(assistantMessage)) {
-			messageMapper.insert(new com.example.jarvis.model.Message(conversationId, userId, "assistant", assistantMessage));
+			Message msg = new Message(conversationId, userId, "assistant", assistantMessage);
+			messageMapper.insert(msg);
+			assistantMsgId = msg.getId();
+		}
+		return assistantMsgId;
+	}
+
+	/**
+	 * 批量写入推理轨迹。messageId 为 null 时跳过（如 assistant 回复为空）。
+	 */
+	private void persistTraces(List<AgentTrace> traces, Long messageId, Long conversationId, Long userId) {
+		if (traces.isEmpty() || messageId == null) {
+			return;
+		}
+		try {
+			for (AgentTrace t : traces) {
+				t.setMessageId(messageId);
+				t.setConversationId(conversationId);
+				t.setUserId(userId);
+				if (t.getIsTruncated() == null) t.setIsTruncated(false);
+			}
+			agentTraceMapper.batchInsert(traces);
+			log.info("推理轨迹写入成功：{} 条, conv={}", traces.size(), conversationId);
+		}
+		catch (Exception e) {
+			log.warn("推理轨迹写入失败：{} 条, error={}", traces.size(), e.getMessage());
 		}
 	}
 
@@ -214,17 +260,43 @@ public class AgentController {
 		throw new IllegalStateException("无法获取当前用户身份，请重新登录");
 	}
 
-	private void sendDelta(SseEmitter emitter, Event event, StringBuilder fullResponse) {
+	/** 推理轨迹收集状态（跨 sendDelta 调用累积，按步骤边界 flush） */
+	private static class TraceState {
+		final List<AgentTrace> traces = new ArrayList<>();
+		int stepCounter = 0;
+		// 累积缓冲
+		StringBuilder reasoningBuf = new StringBuilder();
+		StringBuilder textBuf = new StringBuilder();
+		String currentPhase = null; // "reasoning" / "text" / null
+
+		/** flush 当前累积的缓冲为一条 trace */
+		void flush() {
+			if ("reasoning".equals(currentPhase) && reasoningBuf.length() > 0) {
+				stepCounter++;
+				AgentTrace t = new AgentTrace();
+				t.setStepIndex(stepCounter);
+				t.setStepType("reasoning");
+				String content = reasoningBuf.toString();
+				t.setContent(content.length() > 2000 ? content.substring(0, 2000) : content);
+				traces.add(t);
+				reasoningBuf.setLength(0);
+			}
+			currentPhase = null;
+		}
+	}
+
+	private void sendDelta(SseEmitter emitter, Event event, StringBuilder fullResponse,
+			TraceState ts, Long userId, Long conversationId) {
 		try {
 			if (event.getType() == EventType.AGENT_RESULT) {
-				// 不在此处 complete，交给 onComplete 回调统一发送 done 帧后关闭
 				return;
 			}
 			if (event.isLast()) {
 				return;
 			}
 			Msg msg = event.getMessage();
-			// ThinkingBlock：模型内部思考过程（如 DeepSeek-R1 的 reasoning_content）
+
+			// ── ThinkingBlock：模型内部思考过程（增量） ──
 			var thinkingBlocks = msg.getContentBlocks(ThinkingBlock.class);
 			if (!thinkingBlocks.isEmpty()) {
 				String thinking = thinkingBlocks.stream()
@@ -232,12 +304,92 @@ public class AgentController {
 						.filter(t -> t != null && !t.isEmpty())
 						.collect(Collectors.joining());
 				if (!thinking.isEmpty()) {
+					// 步骤切换：text → reasoning 时 flush text
+					if (!"reasoning".equals(ts.currentPhase)) {
+						ts.flush();
+						ts.currentPhase = "reasoning";
+					}
+					ts.reasoningBuf.append(thinking);
 					emitter.send(SseEmitter.event().name("reasoning").data(thinking));
 				}
 			}
-			// TextBlock：正常回复文本（ReAct 的 Thought + 最终回复）
+
+			// ── ToolUseBlock：Agent 决定调用工具 ──
+			var toolUseBlocks = msg.getContentBlocks(ToolUseBlock.class);
+			for (var tb : toolUseBlocks) {
+				String toolName = tb.getName() != null ? tb.getName() : "unknown";
+				// 增量模式下会产生 __fragment__ 碎片事件，跳过
+				if ("__fragment__".equals(toolName)) {
+					continue;
+				}
+				ts.flush(); // flush 前一个步骤
+				String toolArgs = tb.getInput() != null ? tb.getInput().toString() : "{}";
+
+				ts.stepCounter++;
+				AgentTrace trace = new AgentTrace();
+				trace.setStepIndex(ts.stepCounter);
+				trace.setStepType("tool_call");
+				trace.setToolName(toolName);
+				trace.setToolArgs(toolArgs.length() > 4000 ? toolArgs.substring(0, 4000) : toolArgs);
+				trace.setIsTruncated(false);
+				ts.traces.add(trace);
+
+				emitter.send(SseEmitter.event().name("tool_call").data(Map.of(
+						"step", ts.stepCounter,
+						"tool", toolName,
+						"args", toolArgs.length() > 500 ? toolArgs.substring(0, 500) + "…" : toolArgs
+				)));
+			}
+
+			// ── ToolResultBlock：工具执行结果 ──
+			var toolResultBlocks = msg.getContentBlocks(ToolResultBlock.class);
+			for (var trb : toolResultBlocks) {
+				ts.flush();
+				var outputBlocks = trb.getOutput();
+				String resultText = "";
+				if (outputBlocks != null) {
+					resultText = outputBlocks.stream()
+							.filter(b -> b instanceof TextBlock)
+							.map(b -> ((TextBlock) b).getText())
+							.filter(t -> t != null && !t.isEmpty())
+							.collect(Collectors.joining("\n"));
+				}
+				String toolName = trb.getName() != null ? trb.getName() : "unknown";
+				boolean truncated = resultText.length() > 500;
+				String summary = truncated ? resultText.substring(0, 500) + "…" : resultText;
+				if (summary.isEmpty()) {
+					summary = "(empty result)";
+				}
+
+				ts.stepCounter++;
+				AgentTrace trace = new AgentTrace();
+				trace.setStepIndex(ts.stepCounter);
+				trace.setStepType("tool_result");
+				trace.setToolName(toolName);
+				trace.setToolResult(resultText.length() > 4000 ? resultText.substring(0, 4000) : resultText);
+				trace.setIsTruncated(truncated);
+				ts.traces.add(trace);
+
+				log.info("TRACE step={} tool={} user={} conv={} truncated={}",
+						ts.stepCounter, toolName, userId, conversationId, truncated);
+
+				emitter.send(SseEmitter.event().name("tool_result").data(Map.of(
+						"step", ts.stepCounter,
+						"tool", toolName,
+						"summary", summary,
+						"truncated", truncated
+				)));
+			}
+
+			// ── TextBlock：正常回复文本（增量累积） ──
 			String text = msg.getTextContent();
 			if (text != null && !text.isEmpty()) {
+				// 步骤切换：reasoning → text 时 flush reasoning
+				if (!"text".equals(ts.currentPhase)) {
+					ts.flush();
+					ts.currentPhase = "text";
+				}
+				ts.textBuf.append(text);
 				fullResponse.append(text);
 				emitter.send(SseEmitter.event().data(text));
 			}
