@@ -156,6 +156,15 @@ export const knowledgeApi = {
 }
 
 // ======================================================================
+// 知识库健康度 API
+// ======================================================================
+export const knowledgeHealthApi = {
+  zombieDocs: () => http.get('/knowledge/health/zombie-docs').then((r) => r.data),
+  blindSpots: () => http.get('/knowledge/health/blind-spots').then((r) => r.data),
+  docHeat: () => http.get('/knowledge/health/doc-heat').then((r) => r.data),
+}
+
+// ======================================================================
 // RAG 评测中心 API（只读历史 + 候选池）
 // ======================================================================
 export const evalApi = {
@@ -212,6 +221,18 @@ export const memoryApi = {
 // ======================================================================
 export const traceApi = {
   list: (conversationId) => http.get(`/agent/traces/${conversationId}`).then((r) => r.data),
+}
+
+// ======================================================================
+// 对话分析 API（admin 可见的聚合统计）
+// ======================================================================
+export const analyticsApi = {
+  summary: (days) =>
+    http.get('/analytics/summary', { params: days ? { days } : {} }).then((r) => r.data),
+  toolFrequency: () => http.get('/analytics/tool-frequency').then((r) => r.data),
+  dailyTrend: (days) =>
+    http.get('/analytics/daily-trend', { params: days ? { days } : {} }).then((r) => r.data),
+  skillDistribution: () => http.get('/analytics/skill-distribution').then((r) => r.data),
 }
 
 // ======================================================================

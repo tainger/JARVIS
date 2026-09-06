@@ -15,6 +15,8 @@ import {
   ExperimentOutlined,
   CodeOutlined,
   BugOutlined,
+  BarChartOutlined,
+  HeartOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BRAND, CLAY, CLAY_SHADOW, LAYOUT, RADIUS } from '../theme'
@@ -30,8 +32,10 @@ const menuItems = [
   { key: '/users', icon: <TeamOutlined />, label: '用户管理' },
   { key: '/agents', icon: <RobotOutlined />, label: '智能体管理' },
   { key: '/knowledge', icon: <BookOutlined />, label: '知识库' },
+  { key: '/knowledge-health', icon: <HeartOutlined />, label: '知识健康' },
   { key: '/eval', icon: <ExperimentOutlined />, label: '评测中心' },
   { key: '/traces', icon: <BugOutlined />, label: '推理轨迹' },
+  { key: '/analytics', icon: <BarChartOutlined />, label: '对话分析' },
 ]
 
 // 漂浮黏土装饰：低饱和圆块，均匀铺在内容后面，营造"软"的空间感

@@ -9,8 +9,10 @@ import Tasks from './pages/Tasks'
 import Users from './pages/Users'
 import Agents from './pages/Agents'
 import Knowledge from './pages/Knowledge'
+import KnowledgeHealth from './pages/KnowledgeHealth'
 import EvalCenter from './pages/EvalCenter'
 import AgentTraces from './pages/AgentTraces'
+import ConversationAnalytics from './pages/ConversationAnalytics'
 import { authStore, authApi } from './api/client'
 
 /**
@@ -89,8 +91,10 @@ export default function App() {
         <Route path="users" element={<Users />} />
         <Route path="agents" element={<Agents />} />
         <Route path="knowledge" element={<Knowledge />} />
+        <Route path="knowledge-health" element={<KnowledgeHealth />} />
         <Route path="eval" element={<EvalCenter />} />
         <Route path="traces" element={<AgentTraces />} />
+        <Route path="analytics" element={<ConversationAnalytics />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

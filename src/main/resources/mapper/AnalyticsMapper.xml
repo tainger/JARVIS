@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.jarvis.mapper.AnalyticsMapper">
+
+	<!-- 总览统计 -->
+	<select id="selectSummary" resultType="java.util.LinkedHashMap">
+		SELECT
+			(SELECT COUNT(DISTINCT conversation_id) FROM agent_trace
+				<where>
+					<if test="days != null">
+						AND created_at >= DATE_SUB(NOW(), INTERVAL #{days} DAY)
+					</if>
+				</where>
+			) AS totalConversations,
+			(SELECT COUNT(*) FROM agent_trace
+				<where>
+					<if test="days != null">
+						AND created_at >= DATE_SUB(NOW(), INTERVAL #{days} DAY)
+					</if>
+				</where>
+			) AS totalTraces,
+			(SELECT COUNT(*) FROM agent_trace WHERE step_type = 'tool_call'
+				<if test="days != null">
+					AND created_at >= DATE_SUB(NOW(), INTERVAL #{days} DAY)
+				</if>
+			) AS totalToolCalls,
+			(SELECT IFNULL(ROUND(COUNT(*) * 1.0 / COUNT(DISTINCT message_id), 1), 0)
+			 FROM agent_trace
+				<where>
+					<if test="days != null">
+						AND created_at >= DATE_SUB(NOW(), INTERVAL #{days} DAY)
+					</if>
+				</where>
+			) AS avgStepsPerMessage,
+			(SELECT COUNT(*) FROM agent_trace WHERE is_truncated = 1
+				<if test="days != null">
+					AND created_at >= DATE_SUB(NOW(), INTERVAL #{days} DAY)
+				</if>
+			) AS totalTruncated,
+			(SELECT COUNT(*) FROM eval_candidate WHERE source = 'chat'
+				<if test="days != null">
+					AND created_at >= DATE_SUB(NOW(), INTERVAL #{days} DAY)
+				</if>
+			) AS totalDislikes,
+			(SELECT COUNT(DISTINCT message_id) FROM agent_trace
+				<where>
+					<if test="days != null">
+						AND created_at >= DATE_SUB(NOW(), INTERVAL #{days} DAY)
+					</if>
+				</where>
+			) AS totalMessages
+	</select>
+
+	<!-- 工具调用频率 -->
+	<select id="selectToolFrequency" resultType="java.util.LinkedHashMap">
+		SELECT
+			tool_name AS toolName,
+			COUNT(*) AS count,
+			IFNULL(ROUND(AVG(duration_ms), 0), 0) AS avgDurationMs,
+			IFNULL(MAX(duration_ms), 0) AS maxDurationMs,
+			SUM(CASE WHEN is_truncated = 1 THEN 1 ELSE 0 END) AS truncatedCount
+		FROM agent_trace
+		WHERE step_type = 'tool_call'
+		  AND tool_name IS NOT NULL
+		GROUP BY tool_name
+		ORDER BY count DESC
+	</select>
+
+	<!-- 每日趋势 -->
+	<select id="selectDailyTrend" resultType="java.util.LinkedHashMap">
+		SELECT
+			d.dt AS date,
+			IFNULL(t.conversations, 0) AS conversations,
+			IFNULL(t.toolCalls, 0) AS toolCalls,
+			IFNULL(t.truncated, 0) AS truncated,
+			IFNULL(e.dislikes, 0) AS dislikes
+		FROM (
+			SELECT DATE(created_at) AS dt
+			FROM agent_trace
+			<where>
+				<if test="days != null">
+					created_at >= DATE_SUB(NOW(), INTERVAL #{days} DAY)
+				</if>
+			</where>
+			GROUP BY DATE(created_at)
+		) d
+		LEFT JOIN (
+			SELECT
+				DATE(created_at) AS dt,
+				COUNT(DISTINCT conversation_id) AS conversations,
+				SUM(CASE WHEN step_type = 'tool_call' THEN 1 ELSE 0 END) AS toolCalls,
+				SUM(CASE WHEN is_truncated = 1 THEN 1 ELSE 0 END) AS truncated
+			FROM agent_trace
+			<where>
+				<if test="days != null">
+					created_at >= DATE_SUB(NOW(), INTERVAL #{days} DAY)
+				</if>
+			</where>
+			GROUP BY DATE(created_at)
+		) t ON d.dt = t.dt
+		LEFT JOIN (
+			SELECT
+				DATE(created_at) AS dt,
+				COUNT(*) AS dislikes
+			FROM eval_candidate
+			WHERE source = 'chat'
+			<if test="days != null">
+				AND created_at >= DATE_SUB(NOW(), INTERVAL #{days} DAY)
+			</if>
+			GROUP BY DATE(created_at)
+		) e ON d.dt = e.dt
+		ORDER BY d.dt ASC
+	</select>
+
+	<!-- 技能使用分布：按工具组合推断技能 -->
+	<select id="selectSkillDistribution" resultType="java.util.LinkedHashMap">
+		SELECT
+			CASE
+				WHEN tool_names LIKE '%readFile%'
+				  OR tool_names LIKE '%grepCode%'
+				  OR tool_names LIKE '%listFiles%'
+				THEN 'source-code-analysis'
+				WHEN tool_names LIKE '%listTasks%'
+				  OR tool_names LIKE '%createTask%'
+				  OR tool_names LIKE '%getTask%'
+				THEN 'task-management'
+				WHEN tool_names LIKE '%knowledgeSearch%'
+				THEN 'knowledge-qa'
+				ELSE 'general-chat'
+			END AS skill,
+			COUNT(*) AS conversationCount
+		FROM (
+			SELECT conversation_id,
+			       GROUP_CONCAT(DISTINCT tool_name) AS tool_names
+			FROM agent_trace
+			WHERE tool_name IS NOT NULL
+			GROUP BY conversation_id
+		) skill_map
+		GROUP BY skill
+		ORDER BY conversationCount DESC
+	</select>
+
+</mapper>

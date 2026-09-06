@@ -56,17 +56,20 @@ public class AgentController {
 	private final KnowledgeService knowledgeService;
 
 	private final AgentScopeConfig agentScopeConfig;
+	private final com.example.jarvis.mapper.KnowledgeSearchLogMapper searchLogMapper;
 
 	public AgentController(AgentFactory agentFactory, ConversationService conversationService,
 			MessageMapper messageMapper, AgentTraceMapper agentTraceMapper,
 			KnowledgeService knowledgeService,
-			AgentScopeConfig agentScopeConfig) {
+			AgentScopeConfig agentScopeConfig,
+			com.example.jarvis.mapper.KnowledgeSearchLogMapper searchLogMapper) {
 		this.agentFactory = agentFactory;
 		this.conversationService = conversationService;
 		this.messageMapper = messageMapper;
 		this.agentTraceMapper = agentTraceMapper;
 		this.knowledgeService = knowledgeService;
 		this.agentScopeConfig = agentScopeConfig;
+		this.searchLogMapper = searchLogMapper;
 	}
 
 	@PostMapping("/chat")
@@ -442,10 +445,20 @@ public class AgentController {
 			KnowledgeService.RagInjection injection =
 					knowledgeService.buildInjection(message.strip(), null);
 			if (injection == null) {
+				recordSearchLog(message.strip(), 0, null, null);
 				return new AugmentedInput(message, List.of());
 			}
 			log.info("RAG 注入：命中知识库片段 {} 条", injection.hits().size());
 			List<ChatSource> sources = new ArrayList<>();
+			recordSearchLog(message.strip(), injection.hits().size(),
+					injection.hits().stream()
+							.map(h -> String.valueOf(h.documentId()))
+							.distinct()
+							.collect(Collectors.joining(",")),
+					injection.hits().stream()
+							.map(KnowledgeService.SearchHit::documentTitle)
+							.distinct()
+							.collect(Collectors.joining(";")));
 			for (int i = 0; i < injection.hits().size(); i++) {
 				KnowledgeService.SearchHit hit = injection.hits().get(i);
 				sources.add(new ChatSource(i + 1, hit.documentId(), hit.documentTitle(),
@@ -473,6 +486,14 @@ public class AgentController {
 
 	/** 增强后的用户消息 + 本次回答可引用的来源片段 */
 	private record AugmentedInput(String message, List<ChatSource> sources) {
+	}
+
+	private void recordSearchLog(String query, int resultCount, String docIds, String docTitles) {
+		try {
+			searchLogMapper.insertLog(query, resultCount, docIds, docTitles);
+		} catch (Exception e) {
+			log.warn("知识搜索日志写入失败: query='{}', error={}", query, e.getMessage());
+		}
 	}
 
 	/** 来源卡片展示用的片段摘要 */
