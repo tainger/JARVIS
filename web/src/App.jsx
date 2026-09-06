@@ -14,6 +14,7 @@ import EvalCenter from './pages/EvalCenter'
 import AgentTraces from './pages/AgentTraces'
 import ConversationAnalytics from './pages/ConversationAnalytics'
 import UserProfilePage from './pages/UserProfilePage'
+import AgentDebugger from './pages/AgentDebugger'
 import { authStore, authApi } from './api/client'
 
 /**
@@ -97,6 +98,7 @@ export default function App() {
         <Route path="traces" element={<AgentTraces />} />
         <Route path="analytics" element={<ConversationAnalytics />} />
         <Route path="profile" element={<UserProfilePage />} />
+        <Route path="debugger" element={<AgentDebugger />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

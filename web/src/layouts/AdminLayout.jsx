@@ -38,6 +38,7 @@ const menuItems = [
   { key: '/traces', icon: <BugOutlined />, label: '推理轨迹' },
   { key: '/analytics', icon: <BarChartOutlined />, label: '对话分析' },
   { key: '/profile', icon: <SolutionOutlined />, label: '个人画像' },
+  { key: '/debugger', icon: <BugOutlined />, label: '推理调试' },
 ]
 
 // 漂浮黏土装饰：低饱和圆块，均匀铺在内容后面，营造"软"的空间感

@@ -174,6 +174,17 @@ export const profileApi = {
 }
 
 // ======================================================================
+// 推理调试器 API
+// ======================================================================
+export const debugApi = {
+  steps: (convId) => http.get(`/debug/${convId}/steps`).then((r) => r.data),
+  context: (convId, msgId, stepIdx) => http.get(`/debug/${convId}/context/${msgId}/${stepIdx}`).then((r) => r.data),
+  breakpoints: (convId) => http.get(`/debug/${convId}/breakpoints`).then((r) => r.data),
+  toggleBreakpoint: (data) => http.post('/debug/breakpoints', data).then((r) => r.data),
+  diff: (convA, convB) => http.get(`/debug/diff?convA=${convA}&convB=${convB}`).then((r) => r.data),
+}
+
+// ======================================================================
 // RAG 评测中心 API（只读历史 + 候选池）
 // ======================================================================
 export const evalApi = {

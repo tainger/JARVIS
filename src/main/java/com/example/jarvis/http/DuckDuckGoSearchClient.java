@@ -289,14 +289,14 @@ public class DuckDuckGoSearchClient implements WebSearchClient {
 					Pattern.DOTALL);
 			Matcher rtm = rtPattern.matcher(json);
 			while (rtm.find() && results.size() < maxResults) {
-				String url = rtm.group(1);
+				String rtUrl = rtm.group(1);
 				String text = cleanJsonString(rtm.group(2));
-				if (url.isEmpty() || text.isEmpty() || !isSafeUrl(url)) {
+				if (rtUrl.isEmpty() || text.isEmpty() || !isSafeUrl(rtUrl)) {
 					continue;
 				}
 				String title = text.length() > 80 ? text.substring(0, 77) + "..." : text;
 				String snippet = text.length() > 300 ? text.substring(0, 297) + "..." : text;
-				results.add(new SearchResult(title, snippet, url));
+				results.add(new SearchResult(title, snippet, rtUrl));
 			}
 		}
 		catch (Exception e) {

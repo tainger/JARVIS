@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.jarvis.mapper.DebugBreakpointMapper">
+
+    <resultMap id="DebugBreakpointResultMap" type="com.example.jarvis.model.DebugBreakpoint">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="conversationId" column="conversation_id"/>
+        <result property="messageId" column="message_id"/>
+        <result property="stepIndex" column="step_index"/>
+        <result property="note" column="note"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <select id="findByUserAndConversation" resultMap="DebugBreakpointResultMap">
+        SELECT id, user_id, conversation_id, message_id, step_index, note, created_at
+        FROM debug_breakpoint
+        WHERE user_id = #{userId} AND conversation_id = #{conversationId}
+        ORDER BY message_id ASC, step_index ASC
+    </select>
+
+    <insert id="insert">
+        INSERT IGNORE INTO debug_breakpoint (user_id, conversation_id, message_id, step_index, note)
+        VALUES (#{userId}, #{conversationId}, #{messageId}, #{stepIndex}, #{note})
+    </insert>
+
+    <delete id="delete">
+        DELETE FROM debug_breakpoint
+        WHERE user_id = #{userId} AND conversation_id = #{conversationId}
+          AND message_id = #{messageId} AND step_index = #{stepIndex}
+    </delete>
+
+    <select id="exists" resultType="int">
+        SELECT COUNT(1) FROM debug_breakpoint
+        WHERE user_id = #{userId} AND conversation_id = #{conversationId}
+          AND message_id = #{messageId} AND step_index = #{stepIndex}
+    </select>
+
+</mapper>
