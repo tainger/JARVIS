@@ -4,43 +4,48 @@
 
 源码分析与 RAG 知识库是两条独立链路：知识库面向运营文档（导入→向量化→检索→注入），源码面向技术答疑（Agent 实时读取）。后者不需要索引、不需要 embedding、不需要入库——文件是活的，读当前磁盘状态即可。
 
+**分析目标定位**：工具的沙箱基目录为 `${user.dir}/repo/`，该目录存放已拉取的外部项目源码。例如当前已拉取 Nacos 项目到 `repo/nacos/`，Agent 的所有文件操作均以此为根。这样设计的目的：JARVIS 作为分析工具去读被分析项目的源码，而非读自身代码——避免 Agent 混淆"分析对象"与"工具自身"。
+
 ## Goals / Non-Goals
 
 **Goals:**
-- Agent 能通过 3 个工具（readFile / listFiles / grepCode）自主探索项目源码
-- 路径安全沙箱确保 Agent 无法读取项目外文件
+- Agent 能通过 3 个工具（readFile / listFiles / grepCode）自主探索 `repo/` 下的外部项目源码
+- 路径安全沙箱确保 Agent 无法读取 `repo/` 目录外文件（包括 JARVIS 自身源码和系统文件）
 - 读取大小限制防止大文件撑爆 LLM 上下文窗口
 - 零新增第三方依赖，纯 Java NIO 实现
 
 **Non-Goals:**
 - 不构建源码向量索引（源码不进 RAG 知识库）
 - 不做 AST 解析/语义分析（V1 纯文本读取 + 正则搜索，后续可加）
-- 不支持多项目/外部仓库（V1 仅限当前 JARVIS 项目根目录）
+- 不支持自动 git clone 拉取项目（V1 需用户提前将项目放入 `repo/` 目录）
 - V1 不接入会话持久化（消息历史为本地 state，刷新即清空；记忆系统由 add-agent-memory change 独立实现）
 
 ## Decisions
 
 ### 决策 1：新增 `SourceCodeTools` 而非扩展现有 RAG
 
-**选择**：新建 `tool/SourceCodeTools.java`，模式同 `TaskTools`。
+**选择**：新建 `tool/SourceCodeTools.java`，模式同 `TaskTools`，注入沙箱基目录 `${user.dir}/repo/`。
 
 **理由**：
 - 源码不是文档，强行进 RAG 会破坏语法结构、索引随代码变动失效
 - Agent 自主读文件天然支持"先搜再读、多跳探索"，比固定检索更灵活
 - 工具职责单一，符合现有 Toolkit 注册模式
+- 基目录设为 `repo/` 而非 `user.dir`，让 Agent 专注于分析被拉取的外部项目（如 Nacos）
 
 **备选**：扩展 KnowledgeService 增加"源码索引"能力 → 否决，污染 RAG 语义且维护成本高
 
-### 决策 2：路径沙箱用规范化路径前缀校验
+### 决策 2：路径沙箱基目录为 `repo/` 而非项目根目录
 
-**选择**：所有路径先 `Paths.get(baseDir, relativePath).normalize()`，再 `startsWith(baseDir)` 校验，拒绝 `../` 穿越与符号链接逃逸。
+**选择**：沙箱基目录设为 `${user.dir}/repo/`，所有路径先 `Paths.get(repoDir, relativePath).normalize()`，再 `startsWith(repoDir)` 校验，拒绝 `../` 穿越与符号链接逃逸。
 
 **理由**：
+- JARVIS 是分析工具，被分析的项目放在 `repo/` 下（如 `repo/nacos/`），工具不应读自身代码
+- `repo/` 作为沙箱边界，即使 Agent 被诱导也无法访问 JARVIS 的 `src/`、`.env`、`application.properties` 等敏感文件
 - Java NIO `normalize()` 会解析 `..`，配合 `startsWith` 可有效防穿越
 - 不跟随符号链接（`NOFOLLOW_LINKS`），避免软链逃逸
 - 纯 JDK 实现，零依赖
 
-**备选**：用第三方安全库（如 Apache Commons IO）→ 否决，过度依赖且核心逻辑简单
+**备选**：a) 沙箱设为 `user.dir`（JARVIS 根）→ 否决，Agent 会读 JARVIS 自身代码而非被分析项目；b) 用第三方安全库 → 否决，过度依赖且核心逻辑简单
 
 ### 决策 3：读取限制用行数 + 字节数双阈值
 
@@ -53,16 +58,16 @@
 
 ### 决策 4：grepCode 用 Java 内置正则，不引入 ripgrep
 
-**选择**：遍历项目内文本文件，用 `java.util.regex` 匹配，限制结果数。
+**选择**：遍历 `repo/` 下被分析项目的文本文件，用 `java.util.regex` 匹配，限制结果数。
 
 **理由**：
-- 项目代码量适中（Java + JSX + 配置），纯 Java 遍历性能可接受
+- 被分析项目代码量可能较大（如 Nacos 5000+ Java 文件），但纯 Java 遍历性能可接受（grepCode 限制 30 条结果 + 跳过构建产物目录）
 - 不依赖外部二进制（ripgrep），保持容器化部署简洁
 - 后续如需提速可换 ripgrep subprocess，工具接口不变
 
 ### 决策 5：系统提示词补充引导 + 前端独立页面
 
-**选择**：后端在 `AgentScopeConfig` 的系统提示词中补充源码工具使用引导；前端新增独立"源码分析"页面（路由 `/source-analysis`），复用 Chat.jsx 的 SSE 流式逻辑但使用专用技术支持提示。
+**选择**：后端在 `AgentScopeConfig` 的系统提示词中补充源码工具使用引导（"当用户问题涉及 `repo/` 下项目的代码/报错/接口实现时，优先使用 readFile/listFiles/grepCode 工具定位并基于真实代码回答"）；前端新增独立"源码分析"页面（路由 `/source-analysis`），复用 Chat.jsx 的 SSE 流式逻辑但使用专用技术支持提示。
 
 **理由**：
 - 技术支持/答疑是独立场景，与通用闲聊分离有助于用户专注，也便于后续接入不同提示词/模型
@@ -102,19 +107,21 @@ String systemPrompt = "source-analysis".equals(request.mode())
 ## Risks / Trade-offs
 
 - **[上下文窗口压力]** Agent 多次读文件可能撑爆 LLM 上下文 → 缓解：单次读取 200 行上限 + grep 结果 30 条上限 + keep_alive 不影响；DeepSeek 上下文 64K 足够
-- **[安全风险]** Agent 被诱导读取敏感文件（如 `.env`、密钥） → 缓解：路径沙箱限制在项目根目录内，但 `.env` 也在项目内；需额外配置敏感文件黑名单（`.env`、`*.pem`、`application-prod.properties` 等），V1 实现时加入
-- **[性能]** grepCode 遍历大目录可能慢 → 缓解：跳过 `target/`、`node_modules/`、`.git/` 等目录；限制搜索文件类型（.java/.jsx/.js/.xml/.properties/.md/.sh/.yml/.yaml）
+- **[安全风险]** Agent 被诱导读取敏感文件 → 缓解：路径沙箱限制在 `repo/` 目录内，JARVIS 自身的 `.env`、`application.properties` 等敏感文件不在沙箱范围内，天然隔离；被分析项目内的 `.env` 等仍需敏感文件黑名单拦截
+- **[性能]** grepCode 遍历大目录可能慢 → 缓解：跳过 `target/`、`node_modules/`、`.git/`、`build/`、`dist/` 等目录；限制搜索文件类型（.java/.jsx/.js/.xml/.properties/.md/.sh/.yml/.yaml/.ts/.tsx）
 - **[Agent 误用]** Agent 过度读文件导致响应慢/Token 消耗高 → 缓解：系统提示词引导"优先 grep 定位再精读"；maxIters 已限制（当前 10 轮）
+- **[项目规模]** 被分析项目可能很大（如 Nacos 5000+ Java 文件） → 缓解：grepCode 限制 30 条结果 + 跳过构建产物目录；listFiles 限制返回条数
 
 ## Migration Plan
 
 无数据迁移、无接口变更。部署步骤：
-1. 新增 `SourceCodeTools.java`
-2. 修改 `AgentScopeConfig.agentscopeToolkit()` 注册新 Bean
-3. 更新 `application.properties` 中 `agentscope.agent.sys-prompt` 补充源码工具引导
-4. 前端抽取 `ChatPanel.jsx` 公共组件，新建 `SourceAnalysis.jsx` 页面
-5. 修改 `App.jsx` 加路由 `/source-analysis`，修改 `AdminLayout.jsx` 加菜单项
-6. 重启后端 + 前端热更新，侧边栏出现"源码分析"菜单
+1. 确保 `repo/` 目录下已拉取目标项目（如 `git clone https://github.com/alibaba/nacos.git repo/nacos`）
+2. 新增 `SourceCodeTools.java`，沙箱基目录设为 `${user.dir}/repo/`
+3. 修改 `AgentScopeConfig.agentscopeToolkit()` 注册新 Bean
+4. 更新 `application.properties` 中 `agentscope.agent.sys-prompt` 补充源码工具引导
+5. 前端抽取 `ChatPanel.jsx` 公共组件，新建 `SourceAnalysis.jsx` 页面
+6. 修改 `App.jsx` 加路由 `/source-analysis`，修改 `AdminLayout.jsx` 加菜单项
+7. 重启后端 + 前端热更新，侧边栏出现"源码分析"菜单
 
 回滚：移除 `SourceCodeTools` Bean 注册 + 前端路由/菜单项即可，现有功能不受影响。
 

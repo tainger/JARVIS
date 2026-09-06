@@ -4,6 +4,7 @@ import AdminLayout from './layouts/AdminLayout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Chat from './pages/Chat'
+import SourceAnalysis from './pages/SourceAnalysis'
 import Tasks from './pages/Tasks'
 import Users from './pages/Users'
 import Agents from './pages/Agents'
@@ -82,6 +83,7 @@ export default function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="chat" element={<Chat />} />
+        <Route path="source-analysis" element={<SourceAnalysis />} />
         <Route path="tasks" element={<Tasks />} />
         <Route path="users" element={<Users />} />
         <Route path="agents" element={<Agents />} />

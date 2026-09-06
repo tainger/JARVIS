@@ -191,14 +191,12 @@ public class AgentController {
 		if (!StringUtils.hasText(mode)) {
 			return base;
 		}
-		// 模式扩展（如源码分析模式），预留接口
-		return base + "\n\n" + switch (mode) {
-			case "source-analysis" -> """
-					【源码分析模式】
-					你当前处于源码分析模式。请优先使用 readFile/listFiles/grepCode 等工具阅读项目源码，
-					基于实际代码回答问题，给出具体的文件路径和代码位置。回答应包含代码引用和修复建议。
-					""";
-			default -> "";
+		return switch (mode) {
+			case "source-analysis" -> {
+				String prompt = agentScopeConfig.getAgent().getSourceAnalysisSysPrompt();
+				yield StringUtils.hasText(prompt) ? prompt : base;
+			}
+			default -> base;
 		};
 	}
 

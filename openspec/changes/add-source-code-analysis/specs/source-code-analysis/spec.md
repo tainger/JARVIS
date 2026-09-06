@@ -1,6 +1,6 @@
 ## Purpose
 
-让 ReAct Agent 在技术支持/答疑场景下能自主读取项目源码文件，基于真实代码回答报错定位、接口实现、逻辑梳理等问题，而不是泛泛而谈或编造答案。
+让 ReAct Agent 在技术支持/答疑场景下能自主读取 `repo/` 目录下已拉取的外部项目源码文件（如 Nacos），基于真实代码回答报错定位、接口实现、逻辑梳理等问题，而不是泛泛而谈或编造答案。
 
 ## ADDED Requirements
 
@@ -8,9 +8,9 @@
 
 系统 SHALL 向 AgentScope Toolkit 注册一组源码分析工具，Agent 在 ReAct 推理过程中可自主调用。工具 MUST 包含：
 
-- `readFile(path)`：读取项目内指定文件内容，支持指定起始行与最大行数
-- `listFiles(dir)`：列出项目内指定目录下的文件与子目录
-- `grepCode(pattern, dir)`：在项目指定目录下按正则模式搜索代码，返回匹配的文件路径、行号与行内容
+- `readFile(path)`：读取 `repo/` 目录下指定文件内容，支持指定起始行与最大行数
+- `listFiles(dir)`：列出 `repo/` 目录下指定目录中的文件与子目录
+- `grepCode(pattern, dir)`：在 `repo/` 目录下指定目录中按正则模式搜索代码，返回匹配的文件路径、行号与行内容
 
 每个工具的返回结果 MUST 为纯文本，适合直接拼入 LLM 上下文。
 
@@ -23,29 +23,35 @@
 
 #### Scenario: Agent 回答接口实现问题
 
-- **WHEN** 用户问"知识库检索接口的鉴权逻辑在哪"
-- **THEN** Agent 调用 `grepCode` 搜索 `/api/knowledge` 或 `SecurityConfig`
+- **WHEN** 用户问"Nacos 的服务注册接口在哪里实现"
+- **THEN** Agent 调用 `grepCode` 搜索 `InstanceController` 或 `registerInstance`
 - **AND** 读取相关文件后回答
 
 ### Requirement: 文件路径安全沙箱
 
-所有源码工具的文件路径 MUST 约束在项目根目录（`user.dir`）下。系统 SHALL 拒绝以下访问：
+所有源码工具的文件路径 MUST 约束在 `repo/` 目录（`${user.dir}/repo`）下。系统 SHALL 拒绝以下访问：
 
 - 包含路径穿越（`../`）的路径
-- 解析后逃逸出项目根目录的路径（含符号链接逃逸）
-- 绝对路径（仅允许相对路径输入）
+- 解析后逃逸出 `repo/` 目录的路径（含符号链接逃逸）
+- 绝对路径（仅允许相对路径输入，相对于 `repo/`）
 
-被拒绝的访问 MUST 返回明确的错误说明，不泄露项目外目录结构。
+被拒绝的访问 MUST 返回明确的错误说明，不泄露 `repo/` 外目录结构。
 
 #### Scenario: 拒绝路径穿越
 
 - **WHEN** Agent 调用 `readFile("../../etc/passwd")`
-- **THEN** 工具返回错误：路径越权，仅允许访问项目根目录下的文件
-- **AND** 不读取任何项目外文件
+- **THEN** 工具返回错误：路径越权，仅允许访问 `repo/` 目录下的文件
+- **AND** 不读取任何 `repo/` 外文件
 
-#### Scenario: 允许项目内路径
+#### Scenario: 拒绝访问 JARVIS 自身源码
 
-- **WHEN** Agent 调用 `readFile("src/main/java/com/example/jarvis/controller/AgentController.java")`
+- **WHEN** Agent 调用 `readFile("../src/main/java/com/example/jarvis/tool/SourceCodeTools.java")`
+- **THEN** 工具返回错误：路径越权，仅允许访问 `repo/` 目录下的文件
+- **AND** 不读取 JARVIS 自身源码
+
+#### Scenario: 允许 repo 内路径
+
+- **WHEN** Agent 调用 `readFile("nacos/naming/src/main/java/com/alibaba/nacos/naming/controllers/v3/InstanceControllerV3.java")`
 - **THEN** 工具正常返回该文件内容
 
 ### Requirement: 读取大小限制与截断
@@ -67,12 +73,12 @@
 
 ### Requirement: 工具注册与系统提示
 
-系统 SHALL 将源码分析工具注册进 AgentScope Toolkit，与现有任务工具、知识库工具并列。Agent 的系统提示词 MUST 补充引导：当用户问题涉及本项目代码、报错、接口实现时，优先使用源码工具定位并基于真实代码回答，不得在未读取代码的情况下编造实现细节。
+系统 SHALL 将源码分析工具注册进 AgentScope Toolkit，与现有任务工具、知识库工具并列。Agent 的系统提示词 MUST 补充引导：当用户问题涉及 `repo/` 下项目的代码、报错、接口实现时，优先使用源码工具定位并基于真实代码回答，不得在未读取代码的情况下编造实现细节。
 
 #### Scenario: Agent 知道何时使用源码工具
 
-- **WHEN** 用户问"这个项目的 JWT 是怎么校验的"
-- **THEN** Agent 先调用 `grepCode` 搜索 JWT 相关类
+- **WHEN** 用户问"Nacos 的 Distro 一致性协议是怎么工作的"
+- **THEN** Agent 先调用 `grepCode` 搜索 `DistroProtocol` 相关类
 - **AND** 读取实现文件后再组织回答
 - **AND** 回答中引用实际读取到的代码（可含文件路径与行号）
 
@@ -89,7 +95,7 @@
 #### Scenario: 专用技术支持提示
 
 - **WHEN** 用户在源码分析页面问"NPE 报错"
-- **THEN** Agent 使用专用系统提示，主动调用 grepCode/readFile 定位代码
+- **THEN** Agent 使用专用系统提示，主动调用 grepCode/readFile 定位 `repo/` 下项目代码
 - **AND** 回答风格偏技术支持（给定位 + 修复建议 + 引用代码），而非通用闲聊
 
 #### Scenario: 与通用对话页隔离

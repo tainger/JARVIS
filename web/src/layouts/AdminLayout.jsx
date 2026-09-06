@@ -13,6 +13,7 @@ import {
   TeamOutlined,
   BookOutlined,
   ExperimentOutlined,
+  CodeOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BRAND, CLAY, CLAY_SHADOW, LAYOUT, RADIUS } from '../theme'
@@ -23,6 +24,7 @@ const { Sider, Header, Content, Footer } = Layout
 const menuItems = [
   { key: '/dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
   { key: '/chat', icon: <MessageOutlined />, label: 'AI 对话' },
+  { key: '/source-analysis', icon: <CodeOutlined />, label: '源码分析' },
   { key: '/tasks', icon: <UnorderedListOutlined />, label: '任务管理' },
   { key: '/users', icon: <TeamOutlined />, label: '用户管理' },
   { key: '/agents', icon: <RobotOutlined />, label: '智能体管理' },

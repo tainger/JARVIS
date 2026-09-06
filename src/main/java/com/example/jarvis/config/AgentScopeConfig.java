@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.example.jarvis.tool.SourceCodeTools;
 import com.example.jarvis.tool.TaskTools;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.model.OpenAIChatModel;
@@ -84,6 +85,8 @@ public class AgentScopeConfig {
 
 		private String sysPrompt;
 
+		private String sourceAnalysisSysPrompt;
+
 		private int maxIters = 10;
 
 		public String getName() {
@@ -100,6 +103,14 @@ public class AgentScopeConfig {
 
 		public void setSysPrompt(String sysPrompt) {
 			this.sysPrompt = sysPrompt;
+		}
+
+		public String getSourceAnalysisSysPrompt() {
+			return sourceAnalysisSysPrompt;
+		}
+
+		public void setSourceAnalysisSysPrompt(String sourceAnalysisSysPrompt) {
+			this.sourceAnalysisSysPrompt = sourceAnalysisSysPrompt;
 		}
 
 		public int getMaxIters() {
@@ -281,10 +292,12 @@ public class AgentScopeConfig {
 
 	@Bean
 	public Toolkit agentscopeToolkit(TaskTools taskTools,
-			com.example.jarvis.rag.KnowledgeSearchTools knowledgeSearchTools) {
+			com.example.jarvis.rag.KnowledgeSearchTools knowledgeSearchTools,
+			SourceCodeTools sourceCodeTools) {
 		Toolkit toolkit = new Toolkit();
 		toolkit.registerTool(taskTools);
 		toolkit.registerTool(knowledgeSearchTools);
+		toolkit.registerTool(sourceCodeTools);
 		registerMcpServers(toolkit);
 		return toolkit;
 	}
