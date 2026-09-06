@@ -635,6 +635,47 @@ export default function Chat() {
                             </div>
                           </details>
                         )}
+                        {msg.trace?.some(t => t.tool === 'webSearch') && (
+                          <details
+                            style={{
+                              marginBottom: 8,
+                              border: 'none',
+                              background: 'rgba(0,184,148,0.06)',
+                              borderRadius: 12,
+                              padding: '8px 12px',
+                              fontSize: 13,
+                              color: CLAY.inkSoft,
+                            }}
+                          >
+                            <summary style={{ cursor: 'pointer', fontWeight: 700, userSelect: 'none' }}>
+                              🌐 网络搜索
+                            </summary>
+                            <div style={{ marginTop: 6 }}>
+                              {msg.trace
+                                .filter(t => t.tool === 'webSearch')
+                                .map((t, ti) => (
+                                  <div key={ti} style={{
+                                    marginBottom: 8,
+                                    padding: '6px 10px',
+                                    background: 'rgba(0,0,0,0.03)',
+                                    borderRadius: 8,
+                                    borderLeft: '3px solid #00b894',
+                                  }}>
+                                    {t.type === 'tool_call' && (
+                                      <div style={{ fontSize: 12, fontFamily: 'monospace', opacity: 0.7, wordBreak: 'break-all' }}>
+                                        🔍 搜索中...
+                                      </div>
+                                    )}
+                                    {t.type === 'tool_result' && (
+                                      <div style={{ marginTop: 2, fontSize: 12, opacity: 0.8, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                                        {t.summary}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                            </div>
+                          </details>
+                        )}
                         {msg.content ? (
                           <div className="chat-markdown">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>

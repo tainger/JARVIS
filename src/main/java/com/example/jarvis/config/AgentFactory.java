@@ -5,6 +5,7 @@ import com.example.jarvis.memory.VectorLongTermMemory;
 import com.example.jarvis.mapper.MessageMapper;
 import com.example.jarvis.mapper.UserMemoryMapper;
 import com.example.jarvis.rag.OllamaEmbeddingClient;
+import com.example.jarvis.tool.WebSearchTools;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.LongTermMemoryMode;
 import io.agentscope.core.model.OpenAIChatModel;
@@ -40,15 +41,19 @@ public class AgentFactory {
 
 	private final AgentScopeConfig agentScopeConfig;
 
+	private final WebSearchTools webSearchTools;
+
 	public AgentFactory(OpenAIChatModel sharedModel, Toolkit sharedToolkit,
 			MessageMapper messageMapper, UserMemoryMapper userMemoryMapper,
-			OllamaEmbeddingClient embeddingClient, AgentScopeConfig agentScopeConfig) {
+			OllamaEmbeddingClient embeddingClient, AgentScopeConfig agentScopeConfig,
+			WebSearchTools webSearchTools) {
 		this.sharedModel = sharedModel;
 		this.sharedToolkit = sharedToolkit;
 		this.messageMapper = messageMapper;
 		this.userMemoryMapper = userMemoryMapper;
 		this.embeddingClient = embeddingClient;
 		this.agentScopeConfig = agentScopeConfig;
+		this.webSearchTools = webSearchTools;
 	}
 
 	/**
@@ -61,6 +66,9 @@ public class AgentFactory {
 	 */
 	public ReActAgent create(Long userId, Long conversationId, String systemPrompt) {
 		long start = System.currentTimeMillis();
+
+		// 重置搜索计数（每次新对话独立计数）
+		webSearchTools.resetCallCount();
 
 		// 1. 创建短期记忆并从 DB 加载历史
 		PersistentConversationMemory shortMem =
