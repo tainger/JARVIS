@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.jarvis.mapper.UserMemoryMapper">
+
+	<resultMap id="UserMemoryResultMap" type="com.example.jarvis.model.UserMemory">
+		<id property="id" column="id"/>
+		<result property="userId" column="user_id"/>
+		<result property="content" column="content"/>
+		<result property="type" column="type"/>
+		<result property="embedding" column="embedding"/>
+		<result property="dim" column="dim"/>
+		<result property="createdAt" column="created_at"/>
+		<result property="lastAccessedAt" column="last_accessed_at"/>
+		<result property="isActive" column="is_active"/>
+	</resultMap>
+
+	<sql id="UserMemoryColumns">
+		id, user_id, content, type, embedding, dim, created_at, last_accessed_at, is_active
+	</sql>
+
+	<select id="findByUserId" parameterType="long" resultMap="UserMemoryResultMap">
+		SELECT
+		<include refid="UserMemoryColumns"/>
+		FROM user_memory
+		WHERE user_id = #{userId} AND is_active = 1
+		ORDER BY last_accessed_at DESC
+	</select>
+
+	<select id="findById" parameterType="long" resultMap="UserMemoryResultMap">
+		SELECT
+		<include refid="UserMemoryColumns"/>
+		FROM user_memory
+		WHERE id = #{id}
+	</select>
+
+	<insert id="insert" parameterType="com.example.jarvis.model.UserMemory"
+			useGeneratedKeys="true" keyProperty="id">
+		INSERT INTO user_memory (user_id, content, type, embedding, dim)
+		VALUES (#{userId}, #{content}, #{type}, #{embedding}, #{dim})
+	</insert>
+
+	<update id="updateEmbedding">
+		UPDATE user_memory SET embedding = #{embedding}, dim = #{dim} WHERE id = #{id}
+	</update>
+
+	<update id="updateLastAccessedAt">
+		UPDATE user_memory SET last_accessed_at = CURRENT_TIMESTAMP WHERE id = #{id}
+	</update>
+
+	<update id="softDelete">
+		UPDATE user_memory SET is_active = 0 WHERE id = #{id}
+	</update>
+
+	<select id="countByIdAndUserId" resultType="int">
+		SELECT COUNT(1) FROM user_memory WHERE id = #{id} AND user_id = #{userId}
+	</select>
+
+</mapper>

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.jarvis.mapper.ConversationMapper">
+
+	<resultMap id="ConversationResultMap" type="com.example.jarvis.model.Conversation">
+		<id property="id" column="id"/>
+		<result property="userId" column="user_id"/>
+		<result property="title" column="title"/>
+		<result property="lastActiveAt" column="last_active_at"/>
+		<result property="createdAt" column="created_at"/>
+	</resultMap>
+
+	<sql id="ConversationColumns">
+		id, user_id, title, last_active_at, created_at
+	</sql>
+
+	<select id="findByUserId" parameterType="long" resultMap="ConversationResultMap">
+		SELECT
+		<include refid="ConversationColumns"/>
+		FROM conversation
+		WHERE user_id = #{userId}
+		ORDER BY last_active_at DESC
+	</select>
+
+	<select id="findById" parameterType="long" resultMap="ConversationResultMap">
+		SELECT
+		<include refid="ConversationColumns"/>
+		FROM conversation
+		WHERE id = #{id}
+	</select>
+
+	<insert id="insert" parameterType="com.example.jarvis.model.Conversation"
+			useGeneratedKeys="true" keyProperty="id">
+		INSERT INTO conversation (user_id, title)
+		VALUES (#{userId}, #{title})
+	</insert>
+
+	<update id="updateTitle">
+		UPDATE conversation SET title = #{title} WHERE id = #{id}
+	</update>
+
+	<update id="updateLastActiveAt">
+		UPDATE conversation SET last_active_at = CURRENT_TIMESTAMP WHERE id = #{id}
+	</update>
+
+	<delete id="deleteById" parameterType="long">
+		DELETE FROM conversation WHERE id = #{id}
+	</delete>
+
+	<select id="countByIdAndUserId" resultType="int">
+		SELECT COUNT(1) FROM conversation WHERE id = #{id} AND user_id = #{userId}
+	</select>
+
+</mapper>

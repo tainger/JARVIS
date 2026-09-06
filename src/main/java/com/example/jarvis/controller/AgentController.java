@@ -6,11 +6,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.example.jarvis.config.AgentFactory;
+import com.example.jarvis.config.AgentScopeConfig;
 import com.example.jarvis.dto.ChatRequest;
 import com.example.jarvis.dto.ChatResponse;
 import com.example.jarvis.dto.ChatSource;
+import com.example.jarvis.mapper.MessageMapper;
+import com.example.jarvis.model.Conversation;
 import com.example.jarvis.rag.KnowledgeService;
-import io.agentscope.core.agent.Agent;
+import com.example.jarvis.service.ConversationService;
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
@@ -20,6 +25,7 @@ import io.agentscope.core.model.exception.AuthenticationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,30 +39,64 @@ public class AgentController {
 
 	private static final Logger log = LoggerFactory.getLogger(AgentController.class);
 
-	private final Agent jarvisAgent;
+	private final AgentFactory agentFactory;
+
+	private final ConversationService conversationService;
+
+	private final MessageMapper messageMapper;
 
 	private final KnowledgeService knowledgeService;
 
-	public AgentController(Agent jarvisAgent, KnowledgeService knowledgeService) {
-		this.jarvisAgent = jarvisAgent;
+	private final AgentScopeConfig agentScopeConfig;
+
+	public AgentController(AgentFactory agentFactory, ConversationService conversationService,
+			MessageMapper messageMapper, KnowledgeService knowledgeService,
+			AgentScopeConfig agentScopeConfig) {
+		this.agentFactory = agentFactory;
+		this.conversationService = conversationService;
+		this.messageMapper = messageMapper;
 		this.knowledgeService = knowledgeService;
+		this.agentScopeConfig = agentScopeConfig;
 	}
 
 	@PostMapping("/chat")
 	public ChatResponse chat(@RequestBody ChatRequest request) {
+		Long userId = currentUserId();
+		Conversation conversation = resolveConversation(userId, request.conversationId(), request.message());
+		ReActAgent agent = agentFactory.create(userId, conversation.getId(), buildSystemPrompt(request.mode()));
 		AugmentedInput input = augmentWithKnowledge(request.message());
-		Msg response = jarvisAgent.call(Msg.builder().textContent(input.message()).build()).block();
+		Msg response = agent.call(Msg.builder().textContent(input.message()).build()).block();
+		// 持久化对话
+		persistMessages(conversation.getId(), userId, request.message(), response.getTextContent());
+		conversationService.touch(conversation.getId());
 		return new ChatResponse(response.getTextContent(), input.sources());
 	}
 
 	/**
 	 * Streaming chat endpoint (Server-Sent Events).
-	 * 先发 sources 事件（本次回答引用的知识库片段），随后逐帧发送文本增量；
+	 * 先发 conversation 事件（会话ID），再发 sources 事件（知识库引用），随后逐帧发送文本增量；
 	 * the stream ends when the agent emits its last event.
 	 */
 	@PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
 	public SseEmitter chatStream(@RequestBody ChatRequest request) {
 		SseEmitter emitter = new SseEmitter(0L); // no timeout, stream may be long
+
+		Long userId = currentUserId();
+		// 1. 解析/创建会话
+		Conversation conversation = resolveConversation(userId, request.conversationId(), request.message());
+
+		// 2. 发送会话ID给前端（首次请求前端需要保存）
+		try {
+			emitter.send(SseEmitter.event()
+					.name("conversation")
+					.data(Map.of("conversationId", conversation.getId())));
+		}
+		catch (IOException e) {
+			sendErrorAndComplete(emitter, e);
+			return emitter;
+		}
+
+		// 3. RAG 知识库增强
 		AugmentedInput input = augmentWithKnowledge(request.message());
 		if (!input.sources().isEmpty()) {
 			try {
@@ -67,27 +107,116 @@ public class AgentController {
 				return emitter;
 			}
 		}
+
+		// 4. 创建用户专属 Agent（内部加载短期记忆 + 绑定长期记忆）
+		ReActAgent agent = agentFactory.create(userId, conversation.getId(), buildSystemPrompt(request.mode()));
+
 		Msg msg = Msg.builder().textContent(input.message()).build();
 		StreamOptions options = StreamOptions.builder()
 				.eventTypes(EventType.REASONING, EventType.AGENT_RESULT)
 				.incremental(true)
 				.build();
 
-		jarvisAgent.stream(List.of(msg), options).subscribe(
-				event -> sendDelta(emitter, event),
-				error -> sendErrorAndComplete(emitter, error),
+		// 收集完整回复（用于持久化）
+		StringBuilder fullResponse = new StringBuilder();
+		String userMessage = request.message();
+
+		agent.stream(List.of(msg), options).subscribe(
+				event -> sendDelta(emitter, event, fullResponse),
+				error -> {
+					sendErrorAndComplete(emitter, error);
+					// 错误时也持久化用户消息（助手回复为空或部分）
+					persistMessages(conversation.getId(), userId, userMessage, fullResponse.toString());
+				},
 				() -> {
-					// 发送显式 done 帧，确保前端 reader 能正常结束循环（SseEmitter.complete() 不保证前端 fetch reader 立即收到 done 信号）
+					// 持久化对话消息
+					persistMessages(conversation.getId(), userId, userMessage, fullResponse.toString());
+					// 更新会话活跃时间
+					conversationService.touch(conversation.getId());
+					// 首条消息自动生成标题
+					if (conversation.getTitle() != null && "新对话".equals(conversation.getTitle())
+							&& messageMapper.countByConversationId(conversation.getId()) <= 2) {
+						conversationService.autoTitle(conversation.getId(), userMessage);
+					}
+					// 发送显式 done 帧
 					try {
 						emitter.send(SseEmitter.event().name("done").data("{}"));
-					} catch (Exception ignored) {
+					}
+					catch (Exception ignored) {
 					}
 					emitter.complete();
 				});
 		return emitter;
 	}
 
-	private void sendDelta(SseEmitter emitter, Event event) {
+	/**
+	 * 解析会话：conversationId 为空时自动创建新会话，否则校验归属。
+	 */
+	private Conversation resolveConversation(Long userId, String conversationIdStr, String firstMessage) {
+		if (StringUtils.hasText(conversationIdStr)) {
+			try {
+				Long conversationId = Long.parseLong(conversationIdStr);
+				Conversation conversation = conversationService.getByIdForUser(conversationId, userId);
+				if (conversation != null) {
+					return conversation;
+				}
+				log.warn("会话不属于当前用户，创建新会话：userId={}, conversationId={}", userId, conversationId);
+			}
+			catch (NumberFormatException e) {
+				log.warn("无效的 conversationId：{}", conversationIdStr);
+			}
+		}
+		// 创建新会话（标题首条消息后自动更新）
+		return conversationService.create(userId, "新对话");
+	}
+
+	/**
+	 * 持久化一轮对话的用户消息和助手回复。
+	 */
+	private void persistMessages(Long conversationId, Long userId, String userMessage, String assistantMessage) {
+		if (StringUtils.hasText(userMessage)) {
+			messageMapper.insert(new com.example.jarvis.model.Message(conversationId, userId, "user", userMessage));
+		}
+		if (StringUtils.hasText(assistantMessage)) {
+			messageMapper.insert(new com.example.jarvis.model.Message(conversationId, userId, "assistant", assistantMessage));
+		}
+	}
+
+	/**
+	 * 构建系统提示词：基础提示 + 模式特定提示。
+	 * 长期记忆由框架（LongTermMemoryMode.STATIC_CONTROL）自动 retrieve 注入。
+	 */
+	private String buildSystemPrompt(String mode) {
+		String base = agentScopeConfig.getAgent().getSysPrompt();
+		if (!StringUtils.hasText(mode)) {
+			return base;
+		}
+		// 模式扩展（如源码分析模式），预留接口
+		return base + "\n\n" + switch (mode) {
+			case "source-analysis" -> """
+					【源码分析模式】
+					你当前处于源码分析模式。请优先使用 readFile/listFiles/grepCode 等工具阅读项目源码，
+					基于实际代码回答问题，给出具体的文件路径和代码位置。回答应包含代码引用和修复建议。
+					""";
+			default -> "";
+		};
+	}
+
+	/**
+	 * 从 Spring Security Context 获取当前登录用户ID。
+	 */
+	private Long currentUserId() {
+		Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+		if (principal instanceof Long id) {
+			return id;
+		}
+		if (principal instanceof Integer id) {
+			return id.longValue();
+		}
+		throw new IllegalStateException("无法获取当前用户身份，请重新登录");
+	}
+
+	private void sendDelta(SseEmitter emitter, Event event, StringBuilder fullResponse) {
 		try {
 			if (event.getType() == EventType.AGENT_RESULT) {
 				// 不在此处 complete，交给 onComplete 回调统一发送 done 帧后关闭
@@ -111,9 +240,11 @@ public class AgentController {
 			// TextBlock：正常回复文本（ReAct 的 Thought + 最终回复）
 			String text = msg.getTextContent();
 			if (text != null && !text.isEmpty()) {
+				fullResponse.append(text);
 				emitter.send(SseEmitter.event().data(text));
 			}
-		} catch (Exception e) {
+		}
+		catch (Exception e) {
 			sendErrorAndComplete(emitter, e);
 		}
 	}
@@ -125,9 +256,11 @@ public class AgentController {
 			emitter.send(SseEmitter.event()
 					.name("error")
 					.data(Map.of("error", userMessage)));
-		} catch (IOException ignored) {
+		}
+		catch (IOException ignored) {
 			// connection already lost, nothing to do
-		} finally {
+		}
+		finally {
 			emitter.complete();
 		}
 	}

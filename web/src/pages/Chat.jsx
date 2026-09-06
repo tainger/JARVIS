@@ -1,12 +1,37 @@
-import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Card, Drawer, Input, Modal, Space, Spin, Tag, Typography, message } from 'antd'
-import { ClearOutlined, FileTextOutlined, LoadingOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Alert,
+  Button,
+  Card,
+  Dropdown,
+  Drawer,
+  Input,
+  Layout,
+  List,
+  Modal,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+  message,
+} from 'antd'
+import {
+  ClearOutlined,
+  FileTextOutlined,
+  LoadingOutlined,
+  MessageOutlined,
+  MoreOutlined,
+  PlusOutlined,
+  SendOutlined,
+  StopOutlined,
+} from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { evalApi, knowledgeApi, streamChat } from '../api/client'
+import { conversationApi, evalApi, knowledgeApi, streamChat } from '../api/client'
 import { BRAND, CLAY, CLAY_SHADOW } from '../theme'
 
 const { TextArea } = Input
+const { Sider, Content } = Layout
 
 /**
  * 归一化模型输出的 Markdown：模型偶尔输出 "###标题"、"1.条目" 这种贴身写法，
@@ -35,9 +60,31 @@ export default function Chat() {
   const [dislike, setDislike] = useState(null) // { question, answer } 👎 提交候选池
   const [dislikeNote, setDislikeNote] = useState('')
   const [dislikeSubmitting, setDislikeSubmitting] = useState(false)
+
+  // 会话管理 state
+  const [conversations, setConversations] = useState([])
+  const [currentConversationId, setCurrentConversationId] = useState(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false) // 移动端抽屉
+  const [renameModalOpen, setRenameModalOpen] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
+  const [renameTargetId, setRenameTargetId] = useState(null)
   const abortRef = useRef(null)
   const bottomRef = useRef(null)
   const listRef = useRef(null)
+
+  // 加载会话列表
+  const loadConversations = useCallback(async () => {
+    try {
+      const list = await conversationApi.list()
+      setConversations(list || [])
+    } catch (e) {
+      // 静默失败
+    }
+  }, [])
+
+  useEffect(() => {
+    loadConversations()
+  }, [loadConversations])
 
   const openSourceDoc = async (source) => {
     setViewingDoc({ id: source.documentId, title: source.documentTitle })
@@ -61,6 +108,84 @@ export default function Chat() {
     scrollToBottom()
   }, [messages])
 
+  // 新建对话
+  const newConversation = () => {
+    stop()
+    setMessages([])
+    setError('')
+    setCurrentConversationId(null)
+    setSidebarOpen(false)
+  }
+
+  // 切换会话：加载历史消息
+  const switchConversation = async (convId) => {
+    if (convId === currentConversationId) {
+      setSidebarOpen(false)
+      return
+    }
+    stop()
+    setError('')
+    setCurrentConversationId(convId)
+    setSidebarOpen(false)
+    try {
+      const data = await conversationApi.get(convId, 0, 100)
+      const history = (data.messages || []).map((m) => ({
+        role: m.role,
+        content: m.content,
+        sources: [],
+      }))
+      setMessages(history)
+    } catch (e) {
+      message.error('加载会话历史失败')
+      setMessages([])
+    }
+  }
+
+  // 重命名会话
+  const handleRename = (conv) => {
+    setRenameTargetId(conv.id)
+    setRenameValue(conv.title)
+    setRenameModalOpen(true)
+  }
+
+  const confirmRename = async () => {
+    if (!renameValue.trim()) return
+    try {
+      await conversationApi.rename(renameTargetId, renameValue.trim())
+      await loadConversations()
+      message.success('已重命名')
+    } catch (e) {
+      // 拦截器已提示
+    } finally {
+      setRenameModalOpen(false)
+      setRenameTargetId(null)
+      setRenameValue('')
+    }
+  }
+
+  // 删除会话
+  const handleDelete = (conv) => {
+    Modal.confirm({
+      title: '删除会话',
+      content: `确定删除「${conv.title}」吗？该操作不可恢复。`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await conversationApi.remove(conv.id)
+          if (currentConversationId === conv.id) {
+            newConversation()
+          }
+          await loadConversations()
+          message.success('已删除')
+        } catch (e) {
+          // 拦截器已提示
+        }
+      },
+    })
+  }
+
   const send = async (text) => {
     const content = (text ?? input).trim()
     if (!content || streaming) return
@@ -78,8 +203,22 @@ export default function Chat() {
     try {
       let acc = ''
       let reasoningAcc = ''
-      for await (const { event, data } of streamChat(content, controller.signal)) {
-        if (event === 'message') {
+      for await (const { event, data } of streamChat(content, controller.signal, {
+        conversationId: currentConversationId,
+      })) {
+        if (event === 'conversation') {
+          // 后端返回会话ID（首次请求/新建会话时）
+          try {
+            const parsed = JSON.parse(data)
+            if (parsed.conversationId) {
+              setCurrentConversationId(parsed.conversationId)
+              // 刷新会话列表（后端可能自动生成了标题）
+              loadConversations()
+            }
+          } catch {
+            // 忽略解析失败
+          }
+        } else if (event === 'message') {
           acc += data
           setMessages((prev) => {
             const next = [...prev]
@@ -114,6 +253,8 @@ export default function Chat() {
           }
           throw new Error(msg)
         } else if (event === 'done') {
+          // 对话完成后刷新会话列表（更新标题/时间）
+          loadConversations()
           break
         }
       }
@@ -159,202 +300,362 @@ export default function Chat() {
     }
   }
 
-  return (
-    <Card
-      title={
-        <Space>
-          <span className="clay-icon-box" style={{ width: 36, height: 36, fontSize: 18, background: CLAY.purpleTint }}>
-            🤖
-          </span>
-          <span>JARVIS AI 助手</span>
-          <Tag style={{ background: CLAY.mintTint, color: CLAY.mint }}>SSE 流式</Tag>
-        </Space>
-      }
-      extra={
+  // 会话列表项的右键菜单
+  const conversationMenu = (conv) => ({
+    items: [
+      {
+        key: 'rename',
+        label: '重命名',
+        onClick: () => handleRename(conv),
+      },
+      {
+        key: 'delete',
+        label: '删除',
+        danger: true,
+        onClick: () => handleDelete(conv),
+      },
+    ],
+  })
+
+  // 会话侧边栏内容
+  const sidebarContent = (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ padding: '12px 16px' }}>
         <Button
-          type="text"
-          icon={<ClearOutlined />}
-          onClick={clearChat}
-          disabled={!messages.length && !streaming}
+          type="primary"
+          icon={<PlusOutlined />}
+          block
+          onClick={newConversation}
+          style={{
+            height: 40,
+            fontWeight: 700,
+            borderRadius: 12,
+            background: BRAND.primaryGradient,
+            border: 'none',
+            boxShadow: CLAY_SHADOW.small,
+          }}
         >
-          清空对话
+          新建对话
         </Button>
-      }
-      style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 156px)' }}
-      styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 20 } }}
-    >
-      <div
-        ref={listRef}
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '8px 4px',
-        }}
-      >
-        {messages.length === 0 ? (
-          <div style={{ textAlign: 'center', marginTop: 70 }}>
-            <div
-              className="clay-icon-box clay-float"
-              style={{ width: 84, height: 84, fontSize: 44, background: CLAY.purpleTint, margin: '0 auto 20px' }}
-            >
-              🤖
-            </div>
-            <Typography.Title level={4} style={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
-              开始与 JARVIS 对话
-            </Typography.Title>
-            <Typography.Text type="secondary">支持任务库工具调用与知识库检索</Typography.Text>
-            <Space direction="vertical" style={{ marginTop: 24 }} size={10}>
-              {suggestions.map((s) => (
-                <Button
-                  key={s}
-                  shape="round"
-                  style={{ height: 42, fontWeight: 700, background: CLAY.purpleTint, color: BRAND.primary, border: 'none', boxShadow: CLAY_SHADOW.small }}
-                  onClick={() => send(s)}
-                  disabled={streaming}
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px' }}>
+        <List
+          size="small"
+          dataSource={conversations}
+          locale={{ emptyText: '暂无会话' }}
+          renderItem={(conv) => (
+            <List.Item
+              onClick={() => switchConversation(conv.id)}
+              style={{
+                cursor: 'pointer',
+                borderRadius: 10,
+                marginBottom: 4,
+                padding: '8px 10px',
+                background:
+                  currentConversationId === conv.id ? CLAY.purpleTint : 'transparent',
+                border:
+                  currentConversationId === conv.id
+                    ? `1px solid ${BRAND.primary}30`
+                    : '1px solid transparent',
+              }}
+              actions={[
+                <Dropdown
+                  key="more"
+                  menu={conversationMenu(conv)}
+                  trigger={['click']}
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  {s}
-                </Button>
-              ))}
-            </Space>
-          </div>
-        ) : (
-          <Space direction="vertical" style={{ width: '100%' }} size={20}>
-            {messages.map((msg, i) =>
-              msg.role === 'user' ? (
-                <div key={i} style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <div
-                    style={{
-                      maxWidth: '72%',
-                      background: BRAND.primaryGradient,
-                      color: '#fff',
-                      borderRadius: '22px 22px 6px 22px',
-                      padding: '12px 18px',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                      fontWeight: 600,
-                      boxShadow: 'inset 0 -3px 6px rgba(255,255,255,0.25), inset 0 2px 4px rgba(0,0,0,0.05), 0 8px 18px rgba(108,92,231,0.35)',
-                    }}
-                  >
-                    {msg.content}
-                  </div>
-                </div>
-              ) : (
-                <div key={i} style={{ display: 'flex', gap: 12 }}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<MoreOutlined />}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </Dropdown>,
+              ]}
+            >
+              <List.Item.Meta
+                avatar={<MessageOutlined style={{ color: BRAND.primary }} />}
+                title={
                   <span
-                    className="clay-icon-box"
-                    style={{ width: 40, height: 40, fontSize: 20, background: CLAY.purpleTint, flexShrink: 0 }}
-                  >
-                    🤖
-                  </span>
-                  <div
                     style={{
-                      maxWidth: '76%',
-                      background: '#fff',
-                      borderRadius: '22px 22px 22px 6px',
-                      padding: '12px 18px',
-                      minWidth: 60,
-                      boxShadow: CLAY_SHADOW.raised,
+                      fontWeight: currentConversationId === conv.id ? 700 : 500,
+                      fontSize: 13,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      display: 'block',
+                      maxWidth: 140,
                     }}
                   >
-                    {msg.reasoning && (
-                      <details
+                    {conv.title || '新对话'}
+                  </span>
+                }
+              />
+            </List.Item>
+          )}
+        />
+      </div>
+    </div>
+  )
+
+  return (
+    <Layout style={{ height: 'calc(100vh - 156px)', background: 'transparent' }}>
+      {/* 桌面端侧边栏 */}
+      <Sider
+        width={260}
+        theme="light"
+        style={{
+          borderRadius: 16,
+          marginRight: 16,
+          overflow: 'hidden',
+          border: `1px solid ${CLAY.border}`,
+          boxShadow: CLAY_SHADOW.small,
+        }}
+        className="chat-sider"
+      >
+        {sidebarContent}
+      </Sider>
+
+      <Content>
+        <Card
+          title={
+            <Space>
+              {/* 移动端菜单按钮 */}
+              <Button
+                type="text"
+                icon={<MessageOutlined />}
+                onClick={() => setSidebarOpen(true)}
+                className="chat-mobile-only"
+              />
+              <span className="clay-icon-box" style={{ width: 36, height: 36, fontSize: 18, background: CLAY.purpleTint }}>
+                🤖
+              </span>
+              <span>JARVIS AI 助手</span>
+              <Tag style={{ background: CLAY.mintTint, color: CLAY.mint }}>SSE 流式</Tag>
+            </Space>
+          }
+          extra={
+            <Button
+              type="text"
+              icon={<ClearOutlined />}
+              onClick={clearChat}
+              disabled={!messages.length && !streaming}
+            >
+              清空对话
+            </Button>
+          }
+          style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+          styles={{ body: { flex: 1, display: 'flex', flexDirection: 'column', padding: 20 } }}
+        >
+          <div
+            ref={listRef}
+            style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: '8px 4px',
+            }}
+          >
+            {messages.length === 0 ? (
+              <div style={{ textAlign: 'center', marginTop: 70 }}>
+                <div
+                  className="clay-icon-box clay-float"
+                  style={{ width: 84, height: 84, fontSize: 44, background: CLAY.purpleTint, margin: '0 auto 20px' }}
+                >
+                  🤖
+                </div>
+                <Typography.Title level={4} style={{ fontWeight: 800, letterSpacing: '-0.02em' }}>
+                  开始与 JARVIS 对话
+                </Typography.Title>
+                <Typography.Text type="secondary">支持任务库工具调用与知识库检索</Typography.Text>
+                <Space direction="vertical" style={{ marginTop: 24 }} size={10}>
+                  {suggestions.map((s) => (
+                    <Button
+                      key={s}
+                      shape="round"
+                      style={{ height: 42, fontWeight: 700, background: CLAY.purpleTint, color: BRAND.primary, border: 'none', boxShadow: CLAY_SHADOW.small }}
+                      onClick={() => send(s)}
+                      disabled={streaming}
+                    >
+                      {s}
+                    </Button>
+                  ))}
+                </Space>
+              </div>
+            ) : (
+              <Space direction="vertical" style={{ width: '100%' }} size={20}>
+                {messages.map((msg, i) =>
+                  msg.role === 'user' ? (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <div
                         style={{
-                          marginBottom: 8,
-                          border: 'none',
-                          background: 'rgba(99,102,241,0.06)',
-                          borderRadius: 12,
-                          padding: '8px 12px',
-                          fontSize: 13,
-                          color: CLAY.inkSoft,
+                          maxWidth: '72%',
+                          background: BRAND.primaryGradient,
+                          color: '#fff',
+                          borderRadius: '22px 22px 6px 22px',
+                          padding: '12px 18px',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          fontWeight: 600,
+                          boxShadow: 'inset 0 -3px 6px rgba(255,255,255,0.25), inset 0 2px 4px rgba(0,0,0,0.05), 0 8px 18px rgba(108,92,231,0.35)',
                         }}
                       >
-                        <summary style={{ cursor: 'pointer', fontWeight: 700, userSelect: 'none' }}>
-                          💭 思考过程
-                        </summary>
-                        <div style={{ marginTop: 6, whiteSpace: 'pre-wrap', opacity: 0.85 }}>
-                          {msg.reasoning}
-                        </div>
-                      </details>
-                    )}
-                    {msg.content ? (
-                      <div className="chat-markdown">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {normalizeMarkdown(msg.content)}
-                        </ReactMarkdown>
+                        {msg.content}
                       </div>
-                    ) : (
-                      <Spin indicator={<LoadingOutlined spin />} size="small" />
-                    )}
-                    <SourceList sources={msg.sources} onOpenDoc={openSourceDoc} />
-                    {msg.content && !(streaming && i === messages.length - 1) && (
-                      <div style={{ marginTop: 6, textAlign: 'right' }}>
-                        <Button
-                          type="text"
-                          size="small"
-                          onClick={() =>
-                            setDislike({ question: messages[i - 1]?.content || '', answer: msg.content })
-                          }
-                          style={{ color: CLAY.inkSoft, fontWeight: 700, fontSize: 12 }}
-                        >
-                          👎 回答不满意
-                        </Button>
+                    </div>
+                  ) : (
+                    <div key={i} style={{ display: 'flex', gap: 12 }}>
+                      <span
+                        className="clay-icon-box"
+                        style={{ width: 40, height: 40, fontSize: 20, background: CLAY.purpleTint, flexShrink: 0 }}
+                      >
+                        🤖
+                      </span>
+                      <div
+                        style={{
+                          maxWidth: '76%',
+                          background: '#fff',
+                          borderRadius: '22px 22px 22px 6px',
+                          padding: '12px 18px',
+                          minWidth: 60,
+                          boxShadow: CLAY_SHADOW.raised,
+                        }}
+                      >
+                        {msg.reasoning && (
+                          <details
+                            style={{
+                              marginBottom: 8,
+                              border: 'none',
+                              background: 'rgba(99,102,241,0.06)',
+                              borderRadius: 12,
+                              padding: '8px 12px',
+                              fontSize: 13,
+                              color: CLAY.inkSoft,
+                            }}
+                          >
+                            <summary style={{ cursor: 'pointer', fontWeight: 700, userSelect: 'none' }}>
+                              💭 思考过程
+                            </summary>
+                            <div style={{ marginTop: 6, whiteSpace: 'pre-wrap', opacity: 0.85 }}>
+                              {msg.reasoning}
+                            </div>
+                          </details>
+                        )}
+                        {msg.content ? (
+                          <div className="chat-markdown">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {normalizeMarkdown(msg.content)}
+                            </ReactMarkdown>
+                          </div>
+                        ) : (
+                          <Spin indicator={<LoadingOutlined spin />} size="small" />
+                        )}
+                        <SourceList sources={msg.sources} onOpenDoc={openSourceDoc} />
+                        {msg.content && !(streaming && i === messages.length - 1) && (
+                          <div style={{ marginTop: 6, textAlign: 'right' }}>
+                            <Button
+                              type="text"
+                              size="small"
+                              onClick={() =>
+                                setDislike({ question: messages[i - 1]?.content || '', answer: msg.content })
+                              }
+                              style={{ color: CLAY.inkSoft, fontWeight: 700, fontSize: 12 }}
+                            >
+                              👎 回答不满意
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </div>
-              ),
+                    </div>
+                  ),
+                )}
+              </Space>
             )}
-          </Space>
-        )}
-        <div ref={bottomRef} />
-      </div>
+            <div ref={bottomRef} />
+          </div>
 
-      {error && (
-        <Alert
-          type="error"
-          showIcon
-          message={error}
-          closable
-          style={{ marginBottom: 12, borderRadius: 20 }}
-          onClose={() => setError('')}
-        />
-      )}
+          {error && (
+            <Alert
+              type="error"
+              showIcon
+              message={error}
+              closable
+              style={{ marginBottom: 12, borderRadius: 20 }}
+              onClose={() => setError('')}
+            />
+          )}
 
-      <div
-        className="clay-inset"
-        style={{ display: 'flex', alignItems: 'flex-end', gap: 10, padding: 10, marginTop: 12 }}
-      >
-        <TextArea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onPressEnter={(e) => {
-            if (!e.shiftKey) {
-              e.preventDefault()
-              send()
-            }
-          }}
-          placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-          autoSize={{ minRows: 1, maxRows: 4 }}
-          disabled={streaming}
-          variant="borderless"
-          style={{ background: 'transparent', padding: '8px 10px', fontWeight: 600 }}
-        />
-        {streaming ? (
-          <Button danger icon={<StopOutlined />} style={{ height: 42 }}>
-            停止
-          </Button>
-        ) : (
-          <Button
-            type="primary"
-            icon={<SendOutlined />}
-            onClick={() => send()}
-            disabled={!input.trim()}
-            style={{ height: 42, fontWeight: 800 }}
+          <div
+            className="clay-inset"
+            style={{ display: 'flex', alignItems: 'flex-end', gap: 10, padding: 10, marginTop: 12 }}
           >
-            发送
-          </Button>
-        )}
-      </div>
+            <TextArea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onPressEnter={(e) => {
+                if (!e.shiftKey) {
+                  e.preventDefault()
+                  send()
+                }
+              }}
+              placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+              autoSize={{ minRows: 1, maxRows: 4 }}
+              disabled={streaming}
+              variant="borderless"
+              style={{ background: 'transparent', padding: '8px 10px', fontWeight: 600 }}
+            />
+            {streaming ? (
+              <Button danger icon={<StopOutlined />} style={{ height: 42 }}>
+                停止
+              </Button>
+            ) : (
+              <Button
+                type="primary"
+                icon={<SendOutlined />}
+                onClick={() => send()}
+                disabled={!input.trim()}
+                style={{ height: 42, fontWeight: 800 }}
+              >
+                发送
+              </Button>
+            )}
+          </div>
+        </Card>
+      </Content>
+
+      {/* 移动端会话侧边栏抽屉 */}
+      <Drawer
+        title="会话列表"
+        placement="left"
+        width={280}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        styles={{ body: { padding: 0 } }}
+      >
+        {sidebarContent}
+      </Drawer>
+
+      {/* 重命名弹窗 */}
+      <Modal
+        title="重命名会话"
+        open={renameModalOpen}
+        onOk={confirmRename}
+        onCancel={() => {
+          setRenameModalOpen(false)
+          setRenameTargetId(null)
+          setRenameValue('')
+        }}
+        okText="确定"
+        cancelText="取消"
+      >
+        <Input
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onPressEnter={confirmRename}
+          placeholder="输入新标题"
+          maxLength={200}
+        />
+      </Modal>
 
       <Modal
         title="👎 提交到评测候选池"
@@ -410,7 +711,7 @@ export default function Chat() {
           </div>
         )}
       </Drawer>
-    </Card>
+    </Layout>
   )
 }
 

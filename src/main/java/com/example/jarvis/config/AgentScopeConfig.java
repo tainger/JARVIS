@@ -289,16 +289,10 @@ public class AgentScopeConfig {
 		return toolkit;
 	}
 
-	@Bean
-	public ReActAgent jarvisAgent(OpenAIChatModel agentscopeModel, Toolkit agentscopeToolkit) {
-		return ReActAgent.builder()
-				.name(agent.getName())
-				.sysPrompt(agent.getSysPrompt())
-				.model(agentscopeModel)
-				.toolkit(agentscopeToolkit)
-				.maxIters(agent.getMaxIters())
-				.build();
-	}
+	// 注意：jarvisAgent 单例 Bean 已移除（多租户改造）。
+	// 现由 AgentFactory 在每次对话请求时创建独立的 ReActAgent 实例，
+	// 绑定该用户专属的短期/长期记忆，实现请求级隔离。
+	// 共享单例 beans（agentscopeModel / agentscopeToolkit）保留，无状态可安全共享。
 
 	/**
 	 * 根据配置循环注册所有声明的 MCP 服务器到 Toolkit。

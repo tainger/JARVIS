@@ -188,26 +188,55 @@ export const evalApi = {
 }
 
 // ======================================================================
+// 会话管理 API
+// ======================================================================
+export const conversationApi = {
+  list: () => http.get('/conversations').then((r) => r.data),
+  create: (title) => http.post('/conversations', { title }).then((r) => r.data),
+  get: (id, offset = 0, limit = 50) =>
+    http.get(`/conversations/${id}`, { params: { offset, limit } }).then((r) => r.data),
+  rename: (id, title) => http.put(`/conversations/${id}`, { title }).then((r) => r.data),
+  remove: (id) => http.delete(`/conversations/${id}`),
+}
+
+// ======================================================================
+// 用户长期记忆 API
+// ======================================================================
+export const memoryApi = {
+  list: () => http.get('/memory').then((r) => r.data),
+  remove: (id) => http.delete(`/memory/${id}`),
+}
+
+// ======================================================================
 // SSE 流式聊天（直接用 fetch，不走 axios；同样注入 token）
 // ======================================================================
 /**
  * Stream chat reply via SSE (POST /api/agent/chat/stream).
  * Yields { event, data } frames: event ∈
- *   'message'(默认文本增量)
+ *   'conversation'(会话ID，首次请求或新建会话时返回)
+ * | 'message'(默认文本增量)
+ * | 'reasoning'(模型思考过程)
  * | 'sources'(引用的知识库片段 JSON)
  * | 'error'(后端错误帧)
  * | 'done'(结束标记)
  * Abort via AbortController.
+ *
+ * @param {string} message 用户消息
+ * @param {AbortSignal} signal 中断信号
+ * @param {object} options { conversationId, mode }
  */
-export async function* streamChat(message, signal) {
+export async function* streamChat(message, signal, options = {}) {
   const token = authStore.getToken()
+  const body = { message }
+  if (options.conversationId) body.conversationId = String(options.conversationId)
+  if (options.mode) body.mode = options.mode
   const resp = await fetch('/api/agent/chat/stream', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify(body),
     signal,
   })
 

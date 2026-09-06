@@ -410,3 +410,19 @@ body {
   border-top: 2px dashed rgba(108, 92, 231, 0.2);
   margin: 12px 0;
 }
+
+/* ============================================================
+   会话侧边栏响应式：桌面端显示 Sider，移动端隐藏改用抽屉
+   ============================================================ */
+.chat-mobile-only {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .chat-sider {
+    display: none !important;
+  }
+  .chat-mobile-only {
+    display: inline-flex !important;
+  }
+}
